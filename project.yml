@@ -1,0 +1,59 @@
+name: FloatTrans
+options:
+  bundleIdPrefix: cc.kristar
+  deploymentTarget:
+    macOS: "13.0"
+  createIntermediateGroups: true
+  indentWidth: 4
+  tabWidth: 4
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: minimal
+    MACOSX_DEPLOYMENT_TARGET: "13.0"
+configs:
+  Debug: debug
+  Release: release
+targets:
+  FloatTrans:
+    type: application
+    platform: macOS
+    deploymentTarget: "13.0"
+    sources:
+      - path: Sources/LiveEnglish
+    resources:
+      - path: Resources/Info.plist
+        buildPhase: none
+      - path: Resources/Assets.xcassets
+    settings:
+      base:
+        PRODUCT_NAME: FloatTrans
+        PRODUCT_BUNDLE_IDENTIFIER: cc.kristar.floattrans
+        INFOPLIST_FILE: Resources/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Resources/LiveEnglish.entitlements
+        PRODUCT_MODULE_NAME: LiveEnglish
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        INFOPLIST_KEY_CFBundleDisplayName: 浮译
+        INFOPLIST_KEY_CFBundleName: 浮译
+        SWIFT_EMIT_LOC_STRINGS: NO
+        CODE_SIGN_STYLE: Automatic
+      configs:
+        Debug:
+          SWIFT_OPTIMIZATION_LEVEL: "-Onone"
+        Release:
+          SWIFT_OPTIMIZATION_LEVEL: "-O"
+    scheme:
+      testTargets:
+        - LiveEnglishTests
+      gatherCoverageData: false
+  LiveEnglishTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "13.0"
+    sources:
+      - path: Tests/LiveEnglishTests
+    dependencies:
+      - target: FloatTrans
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.liveenglish.tests

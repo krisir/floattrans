@@ -1,21 +1,29 @@
 import XCTest
+
 @testable import LiveEnglish
 
 final class SentenceExtractorTests: XCTestCase {
     func testExtractsSentenceAtCursor() {
         let text = "第一句话。第二句话正在输入。第三句"
         let cursor = (text as NSString).range(of: "第二句话正在输入").location + 3
-        let result = SentenceExtractor().extract(from: TextSnapshot(pid: 1, bundleIdentifier: nil, text: text, selectedRange: NSRange(location: cursor, length: 0)))
+        let result = SentenceExtractor().extract(
+            from: TextSnapshot(
+                pid: 1, bundleIdentifier: nil, text: text, selectedRange: NSRange(location: cursor, length: 0)))
         XCTAssertEqual(result, "第二句话正在输入")
     }
-    func testChineseDetector() { XCTAssertTrue(ChineseTextDetector().containsChinese("Hello，我今天有点忙")); XCTAssertFalse(ChineseTextDetector().containsChinese("Hello")) }
+    func testChineseDetector() {
+        XCTAssertTrue(ChineseTextDetector().containsChinese("Hello，我今天有点忙"))
+        XCTAssertFalse(ChineseTextDetector().containsChinese("Hello"))
+    }
     func testFallbackUsesLastSegmentWithoutCursor() {
         let snapshot = TextSnapshot(pid: 1, bundleIdentifier: nil, text: "第一句。正在输入的内容", selectedRange: nil)
         XCTAssertEqual(SentenceExtractor().extract(from: snapshot), "正在输入的内容")
     }
     func testPunctuationStillIncludesCompletedSentence() {
         let text = "我今天会晚一点。"
-        let snapshot = TextSnapshot(pid: 1, bundleIdentifier: nil, text: text, selectedRange: NSRange(location: (text as NSString).length, length: 0))
+        let snapshot = TextSnapshot(
+            pid: 1, bundleIdentifier: nil, text: text,
+            selectedRange: NSRange(location: (text as NSString).length, length: 0))
         XCTAssertEqual(SentenceExtractor().extract(from: snapshot), "我今天会晚一点")
     }
 }
