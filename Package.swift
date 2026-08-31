@@ -6,7 +6,9 @@ let package = Package(
     platforms: [.macOS(.v13)],
     products: [.executable(name: "LiveEnglish", targets: ["LiveEnglish"])],
     targets: [
-        .executableTarget(name: "LiveEnglish", path: "Sources/LiveEnglish", swiftSettings: [.unsafeFlags(["-Xfrontend", "-strict-concurrency=minimal"])]),
-        .testTarget(name: "LiveEnglishTests", dependencies: ["LiveEnglish"], path: "Tests/LiveEnglishTests")
+        .executableTarget(
+            name: "LiveEnglish", path: "Sources/LiveEnglish",
+            swiftSettings: [.unsafeFlags(["-Xfrontend", "-strict-concurrency=minimal"])]),
+        .testTarget(name: "LiveEnglishTests", dependencies: ["LiveEnglish"], path: "Tests/LiveEnglishTests"),
     ]
 )
