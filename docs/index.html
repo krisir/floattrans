@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-lang="zh">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="FloatTrans / 浮译 — macOS 菜单栏实时中译英工具。输入中文，屏幕上即时出现英文。"
+    />
+    <meta name="theme-color" content="#05080a" />
+    <meta property="og:title" content="FloatTrans · 浮译" />
+    <meta
+      property="og:description"
+      content="Write in Chinese. See it in English. A quiet macOS menu bar translator."
+    />
+    <meta property="og:image" content="assets/app-icon.png" />
+    <title>FloatTrans · 浮译</title>
+    <link rel="icon" type="image/png" href="assets/favicon.png" />
+    <link rel="apple-touch-icon" href="assets/app-icon.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main" data-i18n="skip">跳到主要内容</a>
+
+    <div class="ambient" aria-hidden="true">
+      <div class="blob blob-a"></div>
+      <div class="blob blob-b"></div>
+    </div>
+
+    <header class="site-header">
+      <div class="container header-inner">
+        <a class="brand" href="#top" aria-label="FloatTrans">
+          <img src="assets/app-icon.svg" width="36" height="36" alt="" />
+          <span class="brand-text">
+            <strong>FloatTrans</strong>
+            <span data-i18n="brandSubtitle">浮译</span>
+          </span>
+        </a>
+
+        <nav class="nav" aria-label="Primary">
+          <a href="#demo" data-i18n="navDemo">演示</a>
+          <a href="#features" data-i18n="navFeatures">功能</a>
+          <a href="#privacy" data-i18n="navPrivacy">隐私</a>
+          <a href="#start" data-i18n="navStart">开始使用</a>
+        </nav>
+
+        <div class="header-actions">
+          <div class="lang-switch" role="group" aria-label="Language">
+            <button type="button" data-set-lang="zh" aria-pressed="true">中文</button>
+            <button type="button" data-set-lang="en" aria-pressed="false">EN</button>
+          </div>
+          <a
+            class="btn btn-ghost"
+            href="https://github.com/krisir/floattrans"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                fill="currentColor"
+                d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0 1 12 6.844a9.59 9.59 0 0 1 2.504.337c1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.02 10.02 0 0 0 22 12.017C22 6.484 17.523 2 12 2z"
+              />
+            </svg>
+            <span data-i18n="navGitHub">GitHub</span>
+          </a>
+        </div>
+      </div>
+    </header>
+
+    <main id="main">
+      <section id="top" class="hero">
+        <div class="container hero-grid">
+          <div class="hero-copy">
+            <p class="eyebrow">
+              <span class="dot" aria-hidden="true"></span>
+              <span data-i18n="eyebrow">macOS 菜单栏工具 · 本地翻译</span>
+            </p>
+            <h1>
+              <span data-i18n="heroTitle1">输入中文</span>
+              <span class="accent" data-i18n="heroTitle2">看见英文</span>
+            </h1>
+            <p class="lede" data-i18n="heroLede">
+              浮译会读取当前支持辅助功能的文本框，把正在输入的中文句子翻译成英文，并以低打扰的浮动框显示——无需复制、粘贴或快捷键。
+            </p>
+            <div class="hero-cta">
+              <a class="btn btn-primary" href="#start">
+                <span data-i18n="ctaPrimary">开始使用</span>
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M5 12h14M13 6l6 6-6 6"
+                  />
+                </svg>
+              </a>
+              <a
+                class="btn btn-secondary"
+                href="https://github.com/krisir/floattrans"
+                target="_blank"
+                rel="noopener noreferrer"
+                data-i18n="ctaSecondary"
+              >
+                查看源码
+              </a>
+            </div>
+            <ul class="hero-points" role="list">
+              <li data-i18n="point1">实时按句翻译</li>
+              <li data-i18n="point2">浮动字幕低打扰</li>
+              <li data-i18n="point3">系统本地模型，不上云</li>
+            </ul>
+          </div>
+
+          <div class="hero-stage" id="demo" aria-labelledby="demo-heading">
+            <h2 id="demo-heading" class="visually-hidden" data-i18n="demoHeading">产品演示</h2>
+            <div class="mac-window" role="img" aria-labelledby="demo-caption">
+              <div class="mac-chrome">
+                <span class="traffic red"></span>
+                <span class="traffic yellow"></span>
+                <span class="traffic green"></span>
+                <span class="mac-title" data-i18n="demoWindowTitle">Notes</span>
+              </div>
+              <div class="mac-body">
+                <p class="field-label" data-i18n="demoFieldLabel">正在输入</p>
+                <div class="input-field" aria-live="polite">
+                  <span id="typed-zh"></span><span class="caret" aria-hidden="true"></span>
+                </div>
+                <div class="overlay-bubble">
+                  <p id="typed-en"></p>
+                  <button class="overlay-close" type="button" tabindex="-1" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+                      <path
+                        fill="currentColor"
+                        d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm3.5 12.1-1.4 1.4L12 13.4l-2.1 2.1-1.4-1.4L10.6 12 8.5 9.9l1.4-1.4L12 10.6l2.1-2.1 1.4 1.4L13.4 12l2.1 2.1Z"
+                      />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+            <p id="demo-caption" class="stage-caption" data-i18n="demoCaption">
+              停下输入片刻后，英文会出现在浮动框里。
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section id="how" class="section">
+        <div class="container">
+          <div class="section-head">
+            <p class="eyebrow" data-i18n="howEyebrow">工作方式</p>
+            <h2 data-i18n="howTitle">三步闭环，全程自动</h2>
+          </div>
+          <ol class="steps">
+            <li>
+              <span class="step-num">01</span>
+              <h3 data-i18n="step1Title">捕获当前句</h3>
+              <p data-i18n="step1Body">通过辅助功能读取当前输入框，按中文及中英文标点识别正在编辑的句子。</p>
+            </li>
+            <li>
+              <span class="step-num">02</span>
+              <h3 data-i18n="step2Title">本地翻译</h3>
+              <p data-i18n="step2Body">使用 macOS Translation 框架与本地语言模型，停顿约半秒后触发，避免输入法过程中频繁闪烁。</p>
+            </li>
+            <li>
+              <span class="step-num">03</span>
+              <h3 data-i18n="step3Title">浮动显示</h3>
+              <p data-i18n="step3Body">英文以字幕式浮动框出现，不抢焦点、可手动关闭，支持位置、字号与自动隐藏。</p>
+            </li>
+          </ol>
+        </div>
+      </section>
+
+      <section id="features" class="section section-alt">
+        <div class="container">
+          <div class="section-head">
+            <p class="eyebrow" data-i18n="featuresEyebrow">功能</p>
+            <h2 data-i18n="featuresTitle">为长时间写作而设计</h2>
+          </div>
+          <div class="bento">
+            <article class="card card-wide">
+              <div class="card-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.75"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M4 7h16M4 12h10M4 17h13"
+                  />
+                </svg>
+              </div>
+              <h3 data-i18n="feat1Title">按句实时更新</h3>
+              <p data-i18n="feat1Body">同一句会动态刷新；新句子可叠放新浮动框。最多同时保留 3 个，每个都可关闭。</p>
+            </article>
+            <article class="card">
+              <div class="card-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.75"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"
+                  />
+                </svg>
+              </div>
+              <h3 data-i18n="feat2Title">可调 Overlay</h3>
+              <p data-i18n="feat2Body">右上角、底部居中、右下角；边距、字号、自动隐藏 3–60 秒或永不隐藏。</p>
+            </article>
+            <article class="card">
+              <div class="card-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.75"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M12 3a9 9 0 0 0-9 9v7a2 2 0 0 0 2 2h2v-6H5v-3a7 7 0 0 1 14 0v3h-2v6h2a2 2 0 0 0 2-2v-7a9 9 0 0 0-9-9z"
+                  />
+                </svg>
+              </div>
+              <h3 data-i18n="feat3Title">应用排除</h3>
+              <p data-i18n="feat3Body">通过文件选择器添加不想翻译的 App，密码等安全输入框始终跳过。</p>
+            </article>
+            <article class="card">
+              <div class="card-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.75"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M4 6h16v12H4zM8 10h8M8 14h5"
+                  />
+                </svg>
+              </div>
+              <h3 data-i18n="feat4Title">中英界面</h3>
+              <p data-i18n="feat4Body">菜单栏与设置页支持简体中文 / English，切换后立即生效。</p>
+            </article>
+            <article class="card card-wide">
+              <div class="card-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.75"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M12 3l7 4v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V7l7-4z"
+                  />
+                </svg>
+              </div>
+              <h3 data-i18n="feat5Title">隐私优先</h3>
+              <p data-i18n="feat5Body">翻译走系统本地能力，无需 API Key、无需自建服务器。调试日志只留在本机，且不记录密码内容。</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="privacy" class="section">
+        <div class="container privacy-grid">
+          <div>
+            <p class="eyebrow" data-i18n="privacyEyebrow">隐私</p>
+            <h2 data-i18n="privacyTitle">你的输入留在本机</h2>
+            <p class="lede" data-i18n="privacyBody">
+              浮译需要辅助功能权限才能读取当前文本框的内容，但不会读取密码字段，也不会把原文或译文上传到我们的服务器——因为我们根本没有服务器。
+            </p>
+          </div>
+          <ul class="checklist" role="list">
+            <li data-i18n="privacy1">跳过 Secure TextField / 密码框</li>
+            <li data-i18n="privacy2">使用 macOS 本地 Translation 语言包</li>
+            <li data-i18n="privacy3">可选排除敏感应用</li>
+            <li data-i18n="privacy4">Release 日志不输出用户原文</li>
+          </ul>
+        </div>
+      </section>
+
+      <section id="start" class="section section-alt">
+        <div class="container">
+          <div class="section-head">
+            <p class="eyebrow" data-i18n="startEyebrow">开始使用</p>
+            <h2 data-i18n="startTitle">安装与首次设置</h2>
+          </div>
+
+          <div class="start-grid">
+            <div class="card requirements">
+              <h3 data-i18n="reqTitle">系统要求</h3>
+              <ul>
+                <li data-i18n="req1">macOS 26 或更高版本</li>
+                <li data-i18n="req2">Accessibility（辅助功能）权限</li>
+                <li data-i18n="req3">中文 → 英文 Translation 语言包</li>
+              </ul>
+            </div>
+
+            <div class="card install">
+              <h3 data-i18n="installTitle">从源码构建</h3>
+              <pre><code>git clone https://github.com/krisir/floattrans.git
+cd floattrans
+zsh Scripts/build-app.sh
+open FloatTrans.app</code></pre>
+              <p class="hint">
+                <span data-i18n="installHint"
+                  >磁盘上的应用包名为 FloatTrans.app；用户可见显示名是「浮译」。也可打 DMG：</span
+                >
+                <code>zsh Scripts/build-dmg.sh</code>
+              </p>
+            </div>
+          </div>
+
+          <ol class="setup-steps">
+            <li data-i18n="setup1">启动后在引导页打开辅助功能设置并授权。</li>
+            <li data-i18n="setup2">在设置中安装中文 → 英文语言包并等待下载完成。</li>
+            <li data-i18n="setup3">在 TextEdit、浏览器等支持辅助功能的输入框中输入中文，停下片刻即可看到英文浮动框。</li>
+          </ol>
+
+          <div class="bottom-cta">
+            <a
+              class="btn btn-primary"
+              href="https://github.com/krisir/floattrans"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  fill="currentColor"
+                  d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0 1 12 6.844a9.59 9.59 0 0 1 2.504.337c1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.02 10.02 0 0 0 22 12.017C22 6.484 17.523 2 12 2z"
+                />
+              </svg>
+              <span data-i18n="ctaRepo">打开 GitHub 仓库</span>
+            </a>
+            <a
+              class="btn btn-secondary"
+              href="https://github.com/krisir/floattrans#readme"
+              target="_blank"
+              rel="noopener noreferrer"
+              data-i18n="ctaReadme"
+            >
+              阅读完整文档
+            </a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="container footer-inner">
+        <div class="footer-brand">
+          <img src="assets/app-icon.svg" width="28" height="28" alt="" />
+          <div>
+            <strong>FloatTrans · 浮译</strong>
+            <p data-i18n="footerTag">开源的 macOS 实时中译英菜单栏工具。</p>
+          </div>
+        </div>
+        <p class="footer-meta">
+          <span data-i18n="footerIcon">图标来自 Tabler Icons（MIT）</span>
+          ·
+          <a href="https://github.com/krisir/floattrans" target="_blank" rel="noopener noreferrer">krisir/floattrans</a>
+        </p>
+      </div>
+    </footer>
+
+    <script src="app.js" defer></script>
+  </body>
+</html>
