@@ -1,5 +1,7 @@
 # FloatTrans
 
+[项目主页](https://krisir.github.io/floattrans/) · [GitHub](https://github.com/krisir/floattrans)
+
 FloatTrans 是一款 macOS 菜单栏实时中译英工具。它读取当前应用中支持 Accessibility 的文本输入框，将中文句子翻译成英文，并以低打扰的浮动框显示结果。
 
 ## 功能
