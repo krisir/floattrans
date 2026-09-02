@@ -22,8 +22,6 @@ targets:
     sources:
       - path: Sources/LiveEnglish
     resources:
-      - path: Resources/Info.plist
-        buildPhase: none
       - path: Resources/Assets.xcassets
     settings:
       base:

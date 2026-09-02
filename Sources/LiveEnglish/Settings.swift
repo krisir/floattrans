@@ -53,6 +53,12 @@ enum OverlayBehavior: String, CaseIterable {
     }
 }
 
+enum TranslationSpeed: Int, CaseIterable {
+    case fast = 300
+    case balanced = 450
+    case relaxed = 700
+}
+
 @MainActor final class SettingsStore: ObservableObject {
     @Published var enabled: Bool { didSet { defaults.set(enabled, forKey: "enabled") } }
     @Published var hideAfter: Double {
@@ -83,6 +89,16 @@ enum OverlayBehavior: String, CaseIterable {
         didSet { defaults.set(overlayBehavior.rawValue, forKey: "overlayBehavior") }
     }
     @Published var uiLanguage: UILanguage { didSet { defaults.set(uiLanguage.rawValue, forKey: "uiLanguage") } }
+    @Published var translationSpeed: Int {
+        didSet {
+            let normalized = TranslationSpeed(rawValue: translationSpeed)?.rawValue ?? TranslationSpeed.balanced.rawValue
+            if translationSpeed != normalized {
+                translationSpeed = normalized
+                return
+            }
+            defaults.set(translationSpeed, forKey: "translationSpeed")
+        }
+    }
     @Published var excludedBundleIDs: Set<String> {
         didSet { defaults.set(Array(excludedBundleIDs), forKey: "excludedBundleIDs") }
     }
@@ -109,11 +125,17 @@ enum OverlayBehavior: String, CaseIterable {
         }
         uiLanguage =
             UILanguage(rawValue: defaults.string(forKey: "uiLanguage") ?? UILanguage.chinese.rawValue) ?? .chinese
+        let speedValue = TranslationSpeed(rawValue: defaults.object(forKey: "translationSpeed") as? Int ?? 450)?.rawValue
+            ?? TranslationSpeed.balanced.rawValue
+        translationSpeed = speedValue
         excludedBundleIDs = Set(
             defaults.stringArray(forKey: "excludedBundleIDs") ?? [
                 "com.agilebits.onepassword7", "com.apple.keychainaccess", "com.apple.dt.Xcode", "com.openai.codex",
                 "cc.kristar.floattrans",
             ])
+        if defaults.object(forKey: "translationSpeed") == nil {
+            defaults.set(speedValue, forKey: "translationSpeed")
+        }
     }
 
     private func updateLoginItem(_ enabled: Bool) {
