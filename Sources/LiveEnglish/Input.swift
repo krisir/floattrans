@@ -118,7 +118,9 @@ public struct InputSessionID: Hashable, Sendable {
             DispatchQueue.main.async { [weak self] in self?.focusApplication(NSWorkspace.shared.frontmostApplication) }
         }
         focusApplication(NSWorkspace.shared.frontmostApplication)
-        pollTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in self?.readSnapshot() }
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.readSnapshot() }
+        }
     }
     func stop() {
         if let appObserver { NSWorkspace.shared.notificationCenter.removeObserver(appObserver) }
@@ -143,6 +145,10 @@ public struct InputSessionID: Hashable, Sendable {
         refreshFocusedElement(app: app)
     }
     private func refreshFocusedElement(app: NSRunningApplication) {
+        guard !excludedBundleIDs.contains(app.bundleIdentifier ?? "") else {
+            focused = nil
+            return
+        }
         guard let focusedApp else { return }
         var value: CFTypeRef?
         _ = AXUIElementCopyAttributeValue(focusedApp, kAXFocusedUIElementAttribute as CFString, &value)
@@ -221,6 +227,9 @@ public struct InputSessionID: Hashable, Sendable {
         lastSelectedRange = nil
     }
     private func readSnapshot() {
+        guard let app = NSWorkspace.shared.frontmostApplication,
+            !excludedBundleIDs.contains(app.bundleIdentifier ?? "")
+        else { return }
         guard let element = focused else { return }
         var value: CFTypeRef?
         var range: CFTypeRef?
@@ -238,11 +247,10 @@ public struct InputSessionID: Hashable, Sendable {
         lastSelectedRange = selected
         DiagnosticLog.write("AXValue read success length=\(text.count)")
         logger.info("AXValue read success length=\(text.count, privacy: .public)")
-        let app = NSWorkspace.shared.frontmostApplication
         let screen = NSScreen.main
         onSnapshot?(
             TextSnapshot(
-                pid: session.pid, bundleIdentifier: app?.bundleIdentifier, text: text, selectedRange: selected),
+                pid: session.pid, bundleIdentifier: app.bundleIdentifier, text: text, selectedRange: selected),
             session, screen)
     }
     private func logElementDetails(_ element: AXUIElement, prefix: String = "AX element") {

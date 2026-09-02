@@ -7,7 +7,7 @@ import SwiftUI
 @main struct LiveEnglishApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     var body: some Scene {
-        MenuBarExtra("FloatTrans", systemImage: appDelegate.state.enabled ? "waveform" : "pause") {
+        MenuBarExtra("FloatTrans", image: "MenuBarIcon") {
             MenuBarMenu(state: appDelegate.state)
         }.menuBarExtraStyle(.menu)
         Settings { SettingsView(state: appDelegate.state) }
@@ -72,7 +72,7 @@ struct MenuBarMenu: View {
         DiagnosticLog.write("startup trusted=\(trustedValue) enabled=\(enabledValue)")
         logger.info("startup trusted=\(trustedValue, privacy: .public) enabled=\(enabledValue, privacy: .public)")
         input.isEnabled = enabled
-        input.delayMilliseconds = 450
+        input.delayMilliseconds = settings.translationSpeed
         overlay.hideAfter = settings.hideAfter
         overlay.neverHide = settings.neverHide
         overlay.textSize = settings.textSize

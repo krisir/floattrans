@@ -4,7 +4,7 @@ import PackageDescription
 let package = Package(
     name: "LiveEnglish",
     platforms: [.macOS(.v13)],
-    products: [.executable(name: "LiveEnglish", targets: ["LiveEnglish"])],
+    products: [.executable(name: "FloatTrans", targets: ["LiveEnglish"])],
     targets: [
         .executableTarget(
             name: "LiveEnglish", path: "Sources/LiveEnglish",

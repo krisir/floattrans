@@ -6,7 +6,7 @@ import XCTest
 final class SettingsStoreTests: XCTestCase {
     private let keys = [
         "enabled", "hideAfter", "neverHide", "launchAtLogin", "textSize", "overlayPosition", "overlayEdgeDistance",
-        "overlayBehavior", "uiLanguage", "excludedBundleIDs",
+        "overlayBehavior", "uiLanguage", "translationSpeed", "excludedBundleIDs",
     ]
 
     func testDisplayNamesAndRenamedBehaviorRawValue() {
@@ -87,6 +87,22 @@ final class SettingsStoreTests: XCTestCase {
 
         let reloaded = SettingsStore()
         XCTAssertEqual(reloaded.uiLanguage, .english)
+    }
+
+    func testTranslationSpeedPersistsAndInvalidValuesUseBalanced() {
+        let defaults = UserDefaults.standard
+        let saved = snapshot(defaults)
+        defer { restore(defaults, saved) }
+
+        defaults.set(700, forKey: "translationSpeed")
+        let store = SettingsStore()
+        XCTAssertEqual(store.translationSpeed, 700)
+        store.translationSpeed = 300
+        XCTAssertEqual(defaults.integer(forKey: "translationSpeed"), 300)
+
+        defaults.set(999, forKey: "translationSpeed")
+        let reloaded = SettingsStore()
+        XCTAssertEqual(reloaded.translationSpeed, 450)
     }
 
     private func snapshot(_ defaults: UserDefaults) -> [String: Any?] {

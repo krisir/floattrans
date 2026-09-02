@@ -222,7 +222,11 @@ struct SettingsView: View {
                 Picker(
                     "",
                     selection: Binding(
-                        get: { state.input.delayMilliseconds }, set: { state.input.delayMilliseconds = $0 })
+                        get: { state.settings.translationSpeed },
+                        set: {
+                            state.settings.translationSpeed = $0
+                            state.input.delayMilliseconds = $0
+                        })
                 ) {
                     Text(L10n.speedFast(lang)).tag(300)
                     Text(L10n.speedBalanced(lang)).tag(450)

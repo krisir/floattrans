@@ -28,16 +28,39 @@ FloatTrans 是一款 macOS 菜单栏实时中译英工具。它读取当前应�
 ```sh
 swift test
 zsh Scripts/build-app.sh
-open LiveEnglish.app
+open FloatTrans.app
 ```
 
 也可以直接运行开发版本：
 
 ```sh
-swift run LiveEnglish
+swift run FloatTrans
 ```
 
-应用对用户显示的名称为 `FloatTrans`；App 包内部可执行文件仍名为 `LiveEnglish`。
+磁盘上的应用包和可执行文件名为 `FloatTrans`；用户看到的显示名是「浮译」。
+
+以前安装过 `LiveEnglish.app` 的，请删掉旧包再装 `FloatTrans.app`。辅助功能权限按 Bundle ID 记录，换路径或换签名后可能要在「系统设置 → 隐私与安全性 → 辅助功能」里重新打开浮译。
+
+## 打 DMG
+
+需要 [create-dmg](https://github.com/create-dmg/create-dmg)：
+
+```sh
+brew install create-dmg
+zsh Scripts/build-dmg.sh
+```
+
+产物在 `dist/FloatTrans-<version>.dmg`。打开后把 `FloatTrans.app` 拖进 Applications。默认是本机 ad-hoc 签名，**没有公证**；发给别人时，对方需要右键 → 打开。
+
+公开分发（个人或公司 Apple Developer Program 均可）时，先配置 Developer ID，再公证：
+
+```sh
+export CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)"
+export NOTARY_PROFILE="notary"
+zsh Scripts/build-dmg.sh
+```
+
+`CODESIGN_IDENTITY` 用 Developer ID Application 签 `.app`（Hardened Runtime + 时间戳）。`NOTARY_PROFILE` 是事先用 `xcrun notarytool store-credentials` 存进钥匙串的配置名；未设置时仍会打出 DMG，但不会提交公证。
 
 ## 首次使用
 
