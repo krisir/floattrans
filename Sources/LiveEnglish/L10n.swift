@@ -118,6 +118,33 @@ enum L10n {
     static func languagesDownloadFailed(_ lang: UILanguage) -> String {
         lang == .chinese ? "语言下载未完成。" : "Language download was not completed."
     }
+    static func groupSpeech(_ lang: UILanguage) -> String {
+        lang == .chinese ? "朗读" : "Speech"
+    }
+    static func readTranslationsAloud(_ lang: UILanguage) -> String {
+        lang == .chinese ? "朗读翻译结果" : "Read Translations Aloud"
+    }
+    static func speechVoice(_ lang: UILanguage) -> String {
+        lang == .chinese ? "声音" : "Voice"
+    }
+    static func speechRate(_ lang: UILanguage) -> String {
+        lang == .chinese ? "语速" : "Speaking Rate"
+    }
+    static func speechVolume(_ lang: UILanguage) -> String {
+        lang == .chinese ? "音量" : "Volume"
+    }
+    static func autoSpeak(_ lang: UILanguage) -> String {
+        lang == .chinese ? "自动朗读" : "Auto Speak"
+    }
+    static func autoSpeakQuietOnly(_ lang: UILanguage) -> String {
+        lang == .chinese ? "仅在 Mac 安静时" : "Only when Mac is quiet"
+    }
+    static func autoSpeakAlways(_ lang: UILanguage) -> String {
+        lang == .chinese ? "总是" : "Always"
+    }
+    static func autoSpeakNever(_ lang: UILanguage) -> String {
+        lang == .chinese ? "从不" : "Never"
+    }
 
     static func groupPosition(_ lang: UILanguage) -> String {
         lang == .chinese ? "位置" : "Position"

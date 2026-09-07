@@ -59,6 +59,20 @@ enum TranslationSpeed: Int, CaseIterable {
     case relaxed = 700
 }
 
+enum AutoSpeakPolicy: String, CaseIterable, Sendable {
+    case quietOnly = "Quiet Only"
+    case always = "Always"
+    case never = "Never"
+
+    func displayName(for lang: UILanguage) -> String {
+        switch self {
+        case .quietOnly: return L10n.autoSpeakQuietOnly(lang)
+        case .always: return L10n.autoSpeakAlways(lang)
+        case .never: return L10n.autoSpeakNever(lang)
+        }
+    }
+}
+
 @MainActor final class SettingsStore: ObservableObject {
     @Published var enabled: Bool { didSet { defaults.set(enabled, forKey: "enabled") } }
     @Published var hideAfter: Double {
@@ -99,10 +113,46 @@ enum TranslationSpeed: Int, CaseIterable {
             defaults.set(translationSpeed, forKey: "translationSpeed")
         }
     }
+    @Published var speechEnabled: Bool { didSet { defaults.set(speechEnabled, forKey: "speechEnabled") } }
+    @Published var speechVoiceIdentifier: String {
+        didSet {
+            if speechVoiceIdentifier.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                speechVoiceIdentifier = Self.defaultSpeechVoiceIdentifier
+                return
+            }
+            defaults.set(speechVoiceIdentifier, forKey: "speechVoiceIdentifier")
+        }
+    }
+    @Published var speechRate: Double {
+        didSet {
+            let normalized = Self.normalizedSpeechRate(speechRate)
+            if speechRate != normalized {
+                speechRate = normalized
+                return
+            }
+            defaults.set(speechRate, forKey: "speechRate")
+        }
+    }
+    @Published var speechVolume: Double {
+        didSet {
+            let normalized = Self.normalizedSpeechVolume(speechVolume)
+            if speechVolume != normalized {
+                speechVolume = normalized
+                return
+            }
+            defaults.set(speechVolume, forKey: "speechVolume")
+        }
+    }
+    @Published var autoSpeakPolicy: AutoSpeakPolicy {
+        didSet { defaults.set(autoSpeakPolicy.rawValue, forKey: "autoSpeakPolicy") }
+    }
     @Published var excludedBundleIDs: Set<String> {
         didSet { defaults.set(Array(excludedBundleIDs), forKey: "excludedBundleIDs") }
     }
     private let defaults = UserDefaults.standard
+    static let defaultSpeechVoiceIdentifier = "en-US"
+    static let defaultSpeechRate = 0.5
+    static let defaultSpeechVolume = 0.8
 
     init() {
         enabled = defaults.object(forKey: "enabled") as? Bool ?? true
@@ -128,6 +178,17 @@ enum TranslationSpeed: Int, CaseIterable {
         let speedValue = TranslationSpeed(rawValue: defaults.object(forKey: "translationSpeed") as? Int ?? 450)?.rawValue
             ?? TranslationSpeed.balanced.rawValue
         translationSpeed = speedValue
+        speechEnabled = defaults.object(forKey: "speechEnabled") as? Bool ?? false
+        let storedVoice = defaults.string(forKey: "speechVoiceIdentifier")?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        speechVoiceIdentifier = storedVoice?.isEmpty == false ? storedVoice! : Self.defaultSpeechVoiceIdentifier
+        speechRate = Self.normalizedSpeechRate(
+            defaults.object(forKey: "speechRate") as? Double ?? Self.defaultSpeechRate)
+        speechVolume = Self.normalizedSpeechVolume(
+            defaults.object(forKey: "speechVolume") as? Double ?? Self.defaultSpeechVolume)
+        autoSpeakPolicy =
+            AutoSpeakPolicy(rawValue: defaults.string(forKey: "autoSpeakPolicy") ?? AutoSpeakPolicy.quietOnly.rawValue)
+            ?? .quietOnly
         excludedBundleIDs = Set(
             defaults.stringArray(forKey: "excludedBundleIDs") ?? [
                 "com.agilebits.onepassword7", "com.apple.keychainaccess", "com.apple.dt.Xcode", "com.openai.codex",
@@ -136,6 +197,14 @@ enum TranslationSpeed: Int, CaseIterable {
         if defaults.object(forKey: "translationSpeed") == nil {
             defaults.set(speedValue, forKey: "translationSpeed")
         }
+    }
+
+    private static func normalizedSpeechRate(_ value: Double) -> Double {
+        min(max(value, 0.1), 1.0)
+    }
+
+    private static func normalizedSpeechVolume(_ value: Double) -> Double {
+        min(max(value, 0.0), 1.0)
     }
 
     private func updateLoginItem(_ enabled: Bool) {

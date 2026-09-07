@@ -54,6 +54,9 @@ struct MenuBarMenu: View {
     let input = InputCoordinator()
     let coordinator: TranslationCoordinator
     let overlay = OverlayCoordinator()
+    let speech: SpeechPerforming
+    let audioContextDetector: AudioContextDetecting
+    private let speechPolicy = SpeechPolicyEvaluator()
     private var currentSession: InputSessionID?
     private var welcomeWindow: NSWindow?
     private var settingsWindow: NSWindow?
@@ -68,6 +71,8 @@ struct MenuBarMenu: View {
         permissionGranted = trustedValue
         showWelcome = welcomeValue
         coordinator = TranslationCoordinator(engine: Self.makeEngine())
+        speech = SpeechService()
+        audioContextDetector = SystemAudioContextDetector()
         NSLog("LiveEnglish startup trusted=%@ enabled=%@", String(trustedValue), String(enabledValue))
         DiagnosticLog.write("startup trusted=\(trustedValue) enabled=\(enabledValue)")
         logger.info("startup trusted=\(trustedValue, privacy: .public) enabled=\(enabledValue, privacy: .public)")
@@ -90,6 +95,7 @@ struct MenuBarMenu: View {
         }
         input.onEmpty = { [weak self] in
             self?.overlay.hide()
+            self?.speech.stop()
             Task { await self?.coordinator.cancel() }
         }
         if permissionGranted && enabled {
@@ -133,6 +139,7 @@ struct MenuBarMenu: View {
             input.reset()
             monitor.stop()
             Task { await coordinator.cancel() }
+            speech.stop()
             overlay.hide()
         }
     }
@@ -192,23 +199,48 @@ struct MenuBarMenu: View {
         currentSession = session
         DiagnosticLog.write("translation requested length=\(text.count)")
         logger.info("translation requested length=\(text.count, privacy: .public)")
-        Task { [weak self] in
-            guard let self else { return }
+        let coordinator = coordinator
+        Task { [weak self, coordinator] in
             guard let result = await coordinator.translate(text) else {
-                DiagnosticLog.write("translation returned no result")
-                logger.info("translation returned no result")
+                await MainActor.run {
+                    DiagnosticLog.write("translation returned no result")
+                    self?.logger.info("translation returned no result")
+                }
                 return
             }
-            guard currentSession == session, enabled else {
-                DiagnosticLog.write("translation discarded stale session")
-                logger.info("translation discarded stale session")
-                return
+            await MainActor.run {
+                self?.acceptTranslationResult(result, key: sentenceKey, session: session, screen: screen)
             }
-            translation = result
-            DiagnosticLog.write("translation result accepted length=\(result.count)")
-            logger.info("translation result accepted length=\(result.count, privacy: .public)")
-            overlay.show(result, key: sentenceKey, on: screen)
         }
+    }
+    private func acceptTranslationResult(
+        _ result: String, key sentenceKey: String, session: InputSessionID, screen: NSScreen?
+    ) {
+        guard currentSession == session, enabled else {
+            DiagnosticLog.write("translation discarded stale session")
+            logger.info("translation discarded stale session")
+            return
+        }
+        translation = result
+        DiagnosticLog.write("translation result accepted length=\(result.count)")
+        logger.info("translation result accepted length=\(result.count, privacy: .public)")
+        overlay.show(result, key: sentenceKey, on: screen)
+        speakIfAllowed(result)
+    }
+    private func speakIfAllowed(_ text: String) {
+        let context = audioContextDetector.currentContext()
+        guard speechPolicy.shouldSpeak(
+            speechEnabled: settings.speechEnabled,
+            autoSpeakPolicy: settings.autoSpeakPolicy,
+            audioContext: context)
+        else {
+            return
+        }
+        speech.speak(
+            text,
+            voiceIdentifier: settings.speechVoiceIdentifier,
+            rate: settings.speechRate,
+            volume: settings.speechVolume)
     }
     deinit { permissionPoll?.cancel() }
 }
