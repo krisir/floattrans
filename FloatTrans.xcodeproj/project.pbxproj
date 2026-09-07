@@ -9,12 +9,13 @@
 /* Begin PBXBuildFile section */
 		13FD88EF94BFD1640E9C6AA7 /* SettingsUI.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACCE1FC53454B7A80B09FD70 /* SettingsUI.swift */; };
 		639DB978799EF3070DD296DB /* L10n.swift in Sources */ = {isa = PBXBuildFile; fileRef = B79DC6D52D2D05F71DF31C44 /* L10n.swift */; };
+		65D72CEC4B01583E1DCAE444 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = FC45424F0EC8E61DF4EC7CA9 /* Assets.xcassets */; };
 		7C911EF27E9D8EE90F6D021A /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A482431763CD170A77874E2 /* Models.swift */; };
 		82E072B354A425A71F0C4127 /* Settings.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3EA250A81145943659ED6AB /* Settings.swift */; };
 		9B032D99F0085297E7C83D74 /* SentenceExtractorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69512DAFE0AC04B2E8984150 /* SentenceExtractorTests.swift */; };
+		9DA65FB69B17312C2BCED8F4 /* Speech.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCB332BE6DA44315878FC053 /* Speech.swift */; };
 		A23924259B47F9F419E7BD84 /* SettingsStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A3EE8953743775602C1775 /* SettingsStoreTests.swift */; };
 		BCF5136321EAF060EB55FDF8 /* Overlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48CD7D62DD8522FF57D9D355 /* Overlay.swift */; };
-		C1D2E3F4A5B60718293A4B5D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = C1D2E3F4A5B60718293A4B5C /* Assets.xcassets */; };
 		E9C9D83CE4D26F68EAA06768 /* App.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62A46770F851F38B730D1893 /* App.swift */; };
 		F2DA12B53C1A19A57BACC155 /* Input.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23436E17ED32F00B3B9E1451 /* Input.swift */; };
 		FD7F2B334BDDD9A0E409D43F /* Diagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 001B1431DA84BAAB160C3C29 /* Diagnostics.swift */; };
@@ -42,15 +43,16 @@
 		ACCE1FC53454B7A80B09FD70 /* SettingsUI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsUI.swift; sourceTree = "<group>"; };
 		B1A3EE8953743775602C1775 /* SettingsStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStoreTests.swift; sourceTree = "<group>"; };
 		B79DC6D52D2D05F71DF31C44 /* L10n.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = L10n.swift; sourceTree = "<group>"; };
-		C1D2E3F4A5B60718293A4B5C /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		F3EA250A81145943659ED6AB /* Settings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Settings.swift; sourceTree = "<group>"; };
+		FC45424F0EC8E61DF4EC7CA9 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		FCB332BE6DA44315878FC053 /* Speech.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Speech.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
 		08B48D9C0B8345818DD30020 = {
 			isa = PBXGroup;
 			children = (
-				E3F4A5B6C7D8093A415C6D7E /* Resources */,
+				2F1DEEAA93E5AE593E69805E /* Resources */,
 				4C7CCFB5184E8209EE2D7835 /* Sources */,
 				16E31E550D08C12BFFAA8367 /* Tests */,
 				ACF107885CA22A32C74FA79C /* Products */,
@@ -78,6 +80,7 @@
 				48CD7D62DD8522FF57D9D355 /* Overlay.swift */,
 				F3EA250A81145943659ED6AB /* Settings.swift */,
 				ACCE1FC53454B7A80B09FD70 /* SettingsUI.swift */,
+				FCB332BE6DA44315878FC053 /* Speech.swift */,
 			);
 			path = LiveEnglish;
 			sourceTree = "<group>";
@@ -89,6 +92,14 @@
 				B1A3EE8953743775602C1775 /* SettingsStoreTests.swift */,
 			);
 			path = LiveEnglishTests;
+			sourceTree = "<group>";
+		};
+		2F1DEEAA93E5AE593E69805E /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				FC45424F0EC8E61DF4EC7CA9 /* Assets.xcassets */,
+			);
+			path = Resources;
 			sourceTree = "<group>";
 		};
 		4C7CCFB5184E8209EE2D7835 /* Sources */ = {
@@ -108,14 +119,6 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
-		E3F4A5B6C7D8093A415C6D7E /* Resources */ = {
-			isa = PBXGroup;
-			children = (
-				C1D2E3F4A5B60718293A4B5C /* Assets.xcassets */,
-			);
-			path = Resources;
-			sourceTree = "<group>";
-		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -124,7 +127,7 @@
 			buildConfigurationList = 6FF54F8A8DD2B0A083CA281F /* Build configuration list for PBXNativeTarget "FloatTrans" */;
 			buildPhases = (
 				6A933C9A71EDA7334F5AA846 /* Sources */,
-				F4A5B6C7D8E90A4B526D7E8F /* Resources */,
+				09A657F829E194C274D7D92E /* Resources */,
 			);
 			buildRules = (
 			);
@@ -190,11 +193,11 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		F4A5B6C7D8E90A4B526D7E8F /* Resources */ = {
+		09A657F829E194C274D7D92E /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				C1D2E3F4A5B60718293A4B5D /* Assets.xcassets in Resources */,
+				65D72CEC4B01583E1DCAE444 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -213,6 +216,7 @@
 				BCF5136321EAF060EB55FDF8 /* Overlay.swift in Sources */,
 				82E072B354A425A71F0C4127 /* Settings.swift in Sources */,
 				13FD88EF94BFD1640E9C6AA7 /* SettingsUI.swift in Sources */,
+				9DA65FB69B17312C2BCED8F4 /* Speech.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -298,6 +302,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -317,7 +322,6 @@
 				CODE_SIGN_ENTITLEMENTS = Resources/LiveEnglish.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				DEVELOPMENT_TEAM = MT3593H466;
 				INFOPLIST_FILE = Resources/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "浮译";
 				INFOPLIST_KEY_CFBundleName = "浮译";
@@ -404,6 +408,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -423,7 +428,6 @@
 				CODE_SIGN_ENTITLEMENTS = Resources/LiveEnglish.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				DEVELOPMENT_TEAM = MT3593H466;
 				INFOPLIST_FILE = Resources/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "浮译";
 				INFOPLIST_KEY_CFBundleName = "浮译";

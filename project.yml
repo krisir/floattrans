@@ -21,8 +21,8 @@ targets:
     deploymentTarget: "13.0"
     sources:
       - path: Sources/LiveEnglish
-    resources:
       - path: Resources/Assets.xcassets
+        buildPhase: resources
     settings:
       base:
         PRODUCT_NAME: FloatTrans
@@ -55,3 +55,4 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.liveenglish.tests
+        GENERATE_INFOPLIST_FILE: YES

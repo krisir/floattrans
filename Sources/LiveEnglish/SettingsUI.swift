@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 import SwiftUI
 @preconcurrency import Translation
 
@@ -241,6 +242,57 @@ struct SettingsView: View {
                     LanguageResourceRow(language: lang)
                 }
             }
+            SettingsGroupHeader(title: L10n.groupSpeech(lang))
+            SettingsRow(label: L10n.readTranslationsAloud(lang)) {
+                Toggle(
+                    "",
+                    isOn: Binding(
+                        get: { settings.speechEnabled },
+                        set: {
+                            settings.speechEnabled = $0
+                            if !$0 { state.speech.stop() }
+                        })
+                )
+                .labelsHidden()
+                .toggleStyle(.switch)
+            }
+            SettingsRow(label: L10n.speechVoice(lang)) {
+                Picker("", selection: $settings.speechVoiceIdentifier) {
+                    Text("English (US)").tag("en-US")
+                    Text("English (UK)").tag("en-GB")
+                    Text("English (AU)").tag("en-AU")
+                    ForEach(Self.installedEnglishVoices, id: \.identifier) { voice in
+                        Text(voice.name).tag(voice.identifier)
+                    }
+                }
+                .labelsHidden()
+                .frame(maxWidth: 220)
+            }
+            SettingsRow(label: L10n.speechRate(lang)) {
+                HStack(spacing: 8) {
+                    Slider(value: $settings.speechRate, in: 0.1...1.0, step: 0.05)
+                    Text(String(format: "%.2f", settings.speechRate))
+                        .monospacedDigit()
+                        .frame(width: 44, alignment: .trailing)
+                }
+            }
+            SettingsRow(label: L10n.speechVolume(lang)) {
+                HStack(spacing: 8) {
+                    Slider(value: $settings.speechVolume, in: 0...1, step: 0.05)
+                    Text("\(Int(settings.speechVolume * 100))%")
+                        .monospacedDigit()
+                        .frame(width: 44, alignment: .trailing)
+                }
+            }
+            SettingsRow(label: L10n.autoSpeak(lang)) {
+                Picker("", selection: $settings.autoSpeakPolicy) {
+                    ForEach(AutoSpeakPolicy.allCases, id: \.self) { policy in
+                        Text(policy.displayName(for: lang)).tag(policy)
+                    }
+                }
+                .labelsHidden()
+                .frame(maxWidth: 220)
+            }
         }
     }
 
@@ -377,6 +429,13 @@ struct SettingsView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private static var installedEnglishVoices: [AVSpeechSynthesisVoice] {
+        AVSpeechSynthesisVoice.speechVoices()
+            .filter { $0.language.hasPrefix("en-") }
+            .filter { !["en-US", "en-GB", "en-AU"].contains($0.identifier) }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 }
 
