@@ -70,7 +70,7 @@ The General page contains the toggles for enabling live translation and launch-a
 
 ### Requirement: Translation page shows direction, speed, and language resources
 
-The 翻译 page shows the translation direction (中文 → 英文, read-only), the translation speed, and the language resource status. The selected translation speed SHALL be persisted and restored across app launches.
+The 翻译 page shows the translation direction (中文 → 英文, read-only), the translation speed, and the language resource status. The selected translation speed SHALL be persisted and restored across app launches. On macOS 15 and later, the language-resource row SHALL be visible so the user can see installed, downloadable, or unsupported status.
 
 #### Scenario: Speed is a segmented control
 - **WHEN** the user views the 翻译 page
@@ -95,6 +95,126 @@ The 翻译 page shows the translation direction (中文 → 英文, read-only), 
 #### Scenario: Language resources unavailable on older systems
 - **WHEN** the running system does not support downloadable language resources
 - **THEN** the 语言资源 row is hidden entirely
+
+#### Scenario: Language resources visible on macOS 15
+- **WHEN** the app is running on macOS 15 or later and the user views the 翻译 page
+- **THEN** the 语言资源 row is visible and is not hidden solely because the system is older than macOS 26
+
+### Requirement: Translation page includes translation timing
+
+The 翻译 page SHALL include a 翻译时机 / Translation Timing control with exactly three options: 超时翻译 / On Pause, 完整句子翻译 / Complete Sentence, and 快捷键触发翻译 / On Shortcut. All visible labels SHALL follow the selected interface language. Changing the mode SHALL take effect without requiring an app restart. When On Shortcut is selected, the page SHALL show a translate-shortcut control; that control MAY be hidden in the other modes.
+
+#### Scenario: Timing control is visible
+- **WHEN** the user views the Translation page
+- **THEN** the page shows Translation Timing with the three options and the currently selected mode
+
+#### Scenario: Timing labels follow Chinese interface
+- **WHEN** the interface language is 中文 and the user views the Translation page
+- **THEN** the timing label and options are shown in Simplified Chinese
+
+#### Scenario: Timing labels follow English interface
+- **WHEN** the interface language is English and the user views the Translation page
+- **THEN** the timing label and options are shown in English
+
+#### Scenario: Shortcut recorder appears for On Shortcut
+- **WHEN** the user selects On Shortcut
+- **THEN** a translate-shortcut control is shown and recording a combination uses that combination for subsequent translate presses
+
+#### Scenario: Shortcut recorder hidden for other modes
+- **WHEN** the user selects On Pause or Complete Sentence
+- **THEN** the translate-shortcut control is not shown
+
+### Requirement: Translation page includes Replace Original and Copy Translation controls
+
+The 翻译 page SHALL include toggles for 替换原文 / Replace Original and 复制译文 / Copy Translation, each with a shortcut control. All visible labels SHALL follow the selected interface language. Changing a toggle or shortcut SHALL take effect without requiring an app restart.
+
+#### Scenario: Action controls are visible
+- **WHEN** the user views the Translation page
+- **THEN** the page shows Replace Original and Copy Translation switches and the current shortcut for each
+
+#### Scenario: Controls follow Chinese interface
+- **WHEN** the interface language is 中文 and the user views the Translation page
+- **THEN** the Replace Original and Copy Translation labels and shortcut labels are shown in Simplified Chinese
+
+#### Scenario: Controls follow English interface
+- **WHEN** the interface language is English and the user views the Translation page
+- **THEN** the Replace Original and Copy Translation labels and shortcut labels are shown in English
+
+#### Scenario: User records a new shortcut
+- **WHEN** the user records a new key combination in either shortcut control
+- **THEN** that combination is shown as the current shortcut for that action and is used for subsequent presses of that action
+
+### Requirement: Shortcut labels show punctuation keys as characters
+
+Recorded and default shortcuts SHALL display ANSI punctuation keys as their unshifted characters, not as a numeric `Key N` fallback. Shift and Option in the combination MUST still appear as modifier glyphs; they MUST NOT change `[` into `{` or `]` into `}` in the label.
+
+#### Scenario: Option-Shift-left-bracket displays as brackets
+- **WHEN** the replace shortcut is Option-Shift-`[`
+- **THEN** the shortcut control shows `⌥⇧[` and does not show `Key 30` or `⌥⇧{`
+
+#### Scenario: Option-Shift-right-bracket displays as brackets
+- **WHEN** the copy shortcut is Option-Shift-`]`
+- **THEN** the shortcut control shows `⌥⇧]` and does not show a numeric key fallback or `⌥⇧}`
+
+### Requirement: Replace Original and Copy Translation settings persist and default safely
+
+Replace Original, Copy Translation, and their shortcuts SHALL persist across app launches. Fresh installs and existing installs without stored values SHALL default to both actions off, replace shortcut Option-Shift-`[`, and copy shortcut Option-Shift-`]`, without changing unrelated existing settings.
+
+#### Scenario: Action settings survive relaunch
+- **WHEN** the user changes Replace Original, Copy Translation, or either shortcut, quits the app, and launches it again
+- **THEN** the previous values are restored
+
+#### Scenario: Fresh install action defaults
+- **WHEN** no prior Replace Original or Copy Translation settings exist
+- **THEN** both actions are off, the replace shortcut is Option-Shift-`[`, and the copy shortcut is Option-Shift-`]`
+
+#### Scenario: Existing install receives action defaults
+- **WHEN** an existing install launches without stored Replace Original or Copy Translation settings
+- **THEN** missing values use the fresh-install defaults without changing unrelated existing settings
+
+#### Scenario: Stored shortcuts are not overwritten
+- **WHEN** an existing install already has stored replace or copy shortcut key codes
+- **THEN** those stored combinations are kept and are not replaced with Option-Shift-bracket defaults
+
+### Requirement: Translation timing persists and defaults to On Pause
+
+Translation timing and the translate shortcut SHALL persist across app launches. Fresh installs and existing installs without stored values SHALL default to On Pause and translate shortcut Control-Shift-T, without changing unrelated existing settings. The default translate shortcut MUST NOT be Control-Option-Return.
+
+#### Scenario: Timing survives relaunch
+- **WHEN** the user changes translation timing or the translate shortcut, quits the app, and launches it again
+- **THEN** the previous values are restored
+
+#### Scenario: Fresh install timing defaults
+- **WHEN** no prior translation-timing settings exist
+- **THEN** timing is On Pause and the translate shortcut is Control-Shift-T
+
+#### Scenario: Existing install receives timing defaults
+- **WHEN** an existing install launches without stored translation-timing settings
+- **THEN** timing is On Pause and the translate shortcut is Control-Shift-T, without changing stored Replace Original, Copy Translation, or their shortcuts
+
+### Requirement: Translation speed applies only in On Pause mode
+
+The existing 翻译速度 / Translation Speed control SHALL continue to set the pause used for On Pause timing. Changing speed SHALL NOT delay Complete Sentence or On Shortcut translation.
+
+#### Scenario: Speed still changes the pause
+- **WHEN** timing is On Pause and the user changes translation speed
+- **THEN** subsequent pause-based translations use the new speed
+
+#### Scenario: Speed ignored for other modes
+- **WHEN** timing is Complete Sentence or On Shortcut
+- **THEN** translation starts when that mode’s trigger fires, without waiting for the translation-speed pause
+
+### Requirement: Onboarding can install language resources on macOS 15
+
+The first-run welcome flow SHALL offer Chinese → English language-resource install on macOS 15 and later, using the same installed / downloading / unsupported outcomes as Settings.
+
+#### Scenario: Welcome shows language install on Sequoia
+- **WHEN** a first-run user on macOS 15 reaches the permission / language step of onboarding
+- **THEN** they can start Chinese → English language-resource installation from that step
+
+#### Scenario: Unsupported Mac during onboarding
+- **WHEN** Chinese → English is unsupported on the current Mac and the user is in onboarding
+- **THEN** the language step shows that the pair is unsupported and does not present a working install action as if download were possible
 
 ### Requirement: Overlay page groups position, appearance, and behavior
 
@@ -160,9 +280,33 @@ The Settings window SHALL include an 关于 / About tab that shows the product n
 - **WHEN** the interface language is English
 - **THEN** the About tab title and descriptive text are shown in English (product name may remain 浮译 where used as the brand)
 
+### Requirement: About tab can check GitHub for updates
+
+The Settings About tab SHALL include a 检查更新 / Check for Updates control. Activating it SHALL compare the running app's marketing version with the latest published GitHub release for `krisir/floattrans`. The check SHALL run only when the user activates the control; the app SHALL NOT poll GitHub in the background or download an installer. While a check is in progress, the control SHALL be disabled. Button label and status text SHALL follow the selected interface language.
+
+#### Scenario: About shows the check control
+- **WHEN** the user selects the About tab
+- **THEN** the page shows a 检查更新 button when the interface language is 中文, or Check for Updates when it is English
+
+#### Scenario: Newer release opens GitHub
+- **WHEN** the user activates Check for Updates and GitHub's latest published release has a higher version than the running app
+- **THEN** the default browser opens that release's GitHub page and the About tab does not claim the app is up to date
+
+#### Scenario: Already up to date
+- **WHEN** the user activates Check for Updates and the latest published GitHub release is the same version as the running app, or is not newer
+- **THEN** the About tab shows localized status that the app is up to date and the browser does not open
+
+#### Scenario: Check fails
+- **WHEN** the user activates Check for Updates and the latest-release lookup fails (network error, unexpected response, or no published release)
+- **THEN** the About tab shows localized status that the check failed and the browser does not open
+
+#### Scenario: Check is in progress
+- **WHEN** a check for updates is in progress
+- **THEN** the Check for Updates control cannot be activated again until the check finishes
+
 ### Requirement: Settings persist and migrate cleanly
 
-All settings persist across app launches. For existing installs, the previous hide-after configuration (a numeric 3–60 second value plus a separate never-hide flag) is preserved — the numeric value is re-clamped to the new 5–60 range and the never-hide flag is kept — and the previous overlay-behavior value is migrated to the renamed option without losing user intent. Missing interface-language values default to 中文.
+All settings persist across app launches. For existing installs, the previous hide-after configuration (a numeric 3–60 second value plus a separate never-hide flag) is preserved — the numeric value is re-clamped to the new 5–60 range and the never-hide flag is kept — and the previous overlay-behavior value is migrated to the renamed option without losing user intent. Missing interface-language values default to 中文. Missing Replace Original and Copy Translation values default to off with replace shortcut Option-Shift-`[` and copy shortcut Option-Shift-`]`. Missing translation-timing values default to On Pause with translate shortcut Control-Shift-T.
 
 #### Scenario: Migrating hide-after
 - **WHEN** an existing install launches the new version with a stored hide-after value and a never-hide flag
@@ -174,7 +318,7 @@ All settings persist across app launches. For existing installs, the previous hi
 
 #### Scenario: Fresh install defaults
 - **WHEN** no prior settings exist
-- **THEN** defaults are: live translation on, launch at login off, interface language 中文, translation speed Balanced / 均衡, overlay position bottom-center, text size medium, edge distance 48, new-translation behavior replace, hide-after 5 seconds, never-hide off, no excluded applications
+- **THEN** defaults are: live translation on, launch at login off, interface language 中文, translation speed Balanced / 均衡, translation timing On Pause, translate shortcut Control-Shift-T, overlay position bottom-center, text size medium, edge distance 48, new-translation behavior replace, hide-after 5 seconds, never-hide off, no excluded applications, Replace Original off, Copy Translation off, replace shortcut Option-Shift-`[`, copy shortcut Option-Shift-`]`
 
 #### Scenario: Existing install without interface language
 - **WHEN** an existing install has no stored interface-language value

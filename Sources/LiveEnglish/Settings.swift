@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import ServiceManagement
 
@@ -59,25 +60,86 @@ enum TranslationSpeed: Int, CaseIterable {
     case relaxed = 700
 }
 
-/// Selects the translation backend used by the live pipeline.
-///
-/// Local is the privacy-preserving default and uses Apple's on-device
-/// Translation framework where available. Language model mode sends text to
-/// the first enabled model in the configured fail-over list.
-enum TranslationBackend: String, CaseIterable, Codable, Identifiable, Sendable, Hashable {
-    case local
-    case languageModel = "language-model"
-
-    var id: String { rawValue }
-
-    /// Aliases keep the setting pleasant to use from tests and integrations.
-    static var apple: TranslationBackend { .local }
-    static var llm: TranslationBackend { .languageModel }
+enum TranslationTiming: String, CaseIterable, Sendable {
+    case pause = "Pause"
+    case completeSentence = "Complete Sentence"
+    case shortcut = "Shortcut"
 
     func displayName(for lang: UILanguage) -> String {
         switch self {
-        case .local: return L10n.backendLocal(lang)
-        case .languageModel: return L10n.backendLanguageModel(lang)
+        case .pause: return L10n.timingPause(lang)
+        case .completeSentence: return L10n.timingCompleteSentence(lang)
+        case .shortcut: return L10n.timingShortcut(lang)
+        }
+    }
+}
+
+struct ReplaceShortcut: Equatable, Sendable {
+    var keyCode: UInt32
+    var carbonModifiers: UInt32
+
+    static let controlKeyFlag: UInt32 = 1 << 12
+    static let shiftKeyFlag: UInt32 = 1 << 9
+    static let optionKeyFlag: UInt32 = 1 << 11
+    static let commandKeyFlag: UInt32 = 1 << 8
+    static let returnKeyCode: UInt32 = 0x24
+    static let cKeyCode: UInt32 = 0x08
+    static let tKeyCode: UInt32 = 0x11
+    static let leftBracketKeyCode: UInt32 = 0x21
+    static let rightBracketKeyCode: UInt32 = 0x1E
+    static let escapeKeyCode: UInt32 = 0x35
+
+    static let controlShiftReturn = ReplaceShortcut(
+        keyCode: returnKeyCode, carbonModifiers: controlKeyFlag | shiftKeyFlag)
+    static let controlShiftC = ReplaceShortcut(
+        keyCode: cKeyCode, carbonModifiers: controlKeyFlag | shiftKeyFlag)
+    static let controlShiftT = ReplaceShortcut(
+        keyCode: tKeyCode, carbonModifiers: controlKeyFlag | shiftKeyFlag)
+    static let optionShiftLeftBracket = ReplaceShortcut(
+        keyCode: leftBracketKeyCode, carbonModifiers: optionKeyFlag | shiftKeyFlag)
+    static let optionShiftRightBracket = ReplaceShortcut(
+        keyCode: rightBracketKeyCode, carbonModifiers: optionKeyFlag | shiftKeyFlag)
+
+    var displayString: String {
+        var parts = ""
+        if carbonModifiers & Self.controlKeyFlag != 0 { parts += "⌃" }
+        if carbonModifiers & Self.optionKeyFlag != 0 { parts += "⌥" }
+        if carbonModifiers & Self.shiftKeyFlag != 0 { parts += "⇧" }
+        if carbonModifiers & Self.commandKeyFlag != 0 { parts += "⌘" }
+        parts += Self.glyph(for: keyCode)
+        return parts
+    }
+
+    static func from(event: NSEvent) -> ReplaceShortcut? {
+        if UInt32(event.keyCode) == escapeKeyCode { return nil }
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        var carbon: UInt32 = 0
+        if flags.contains(.control) { carbon |= controlKeyFlag }
+        if flags.contains(.option) { carbon |= optionKeyFlag }
+        if flags.contains(.shift) { carbon |= shiftKeyFlag }
+        if flags.contains(.command) { carbon |= commandKeyFlag }
+        guard carbon & (controlKeyFlag | optionKeyFlag | commandKeyFlag) != 0 else { return nil }
+        return ReplaceShortcut(keyCode: UInt32(event.keyCode), carbonModifiers: carbon)
+    }
+
+    private static func glyph(for keyCode: UInt32) -> String {
+        switch keyCode {
+        case 0x24, 0x4C: return "↩"
+        case 0x30: return "⇥"
+        case 0x31: return "Space"
+        case 0x33: return "⌫"
+        case 0x35: return "⎋"
+        default:
+            let letters: [UInt32: String] = [
+                0x00: "A", 0x01: "S", 0x02: "D", 0x03: "F", 0x04: "H", 0x05: "G", 0x06: "Z", 0x07: "X",
+                0x08: "C", 0x09: "V", 0x0B: "B", 0x0C: "Q", 0x0D: "W", 0x0E: "E", 0x0F: "R", 0x10: "Y",
+                0x11: "T", 0x12: "1", 0x13: "2", 0x14: "3", 0x15: "4", 0x16: "6", 0x17: "5", 0x18: "=",
+                0x19: "9", 0x1A: "7", 0x1B: "-", 0x1C: "8", 0x1D: "0", 0x1E: "]", 0x1F: "O",
+                0x20: "U", 0x21: "[", 0x22: "I", 0x23: "P", 0x25: "L", 0x26: "J", 0x27: "'", 0x28: "K",
+                0x29: ";", 0x2A: "\\", 0x2B: ",", 0x2C: "/", 0x2D: "N", 0x2E: "M", 0x2F: ".",
+                0x32: "`",
+            ]
+            return letters[keyCode] ?? "Key \(keyCode)"
         }
     }
 }
@@ -112,41 +174,6 @@ enum TranslationBackend: String, CaseIterable, Codable, Identifiable, Sendable, 
         didSet { defaults.set(overlayBehavior.rawValue, forKey: "overlayBehavior") }
     }
     @Published var uiLanguage: UILanguage { didSet { defaults.set(uiLanguage.rawValue, forKey: "uiLanguage") } }
-    @Published var sourceLanguage: Language {
-        didSet {
-            defaults.set(sourceLanguage.rawValue, forKey: "sourceLanguage")
-            onTranslationSettingsChanged?()
-        }
-    }
-    @Published var targetLanguage: Language {
-        didSet {
-            defaults.set(targetLanguage.rawValue, forKey: "targetLanguage")
-            onTranslationSettingsChanged?()
-        }
-    }
-    @Published var translationBackend: TranslationBackend {
-        didSet {
-            defaults.set(translationBackend.rawValue, forKey: "translationBackend")
-            onTranslationSettingsChanged?()
-        }
-    }
-    @Published var llmModels: [LLMModelConfiguration] {
-            didSet {
-                persistLLMModels()
-                onTranslationSettingsChanged?()
-            }
-    }
-    @Published var llmFallbackTimeout: Double {
-        didSet {
-            let normalized = Self.clampLLMTimeout(llmFallbackTimeout)
-            if llmFallbackTimeout != normalized {
-                llmFallbackTimeout = normalized
-                return
-            }
-            defaults.set(llmFallbackTimeout, forKey: "llmFallbackTimeout")
-            onTranslationSettingsChanged?()
-        }
-    }
     @Published var translationSpeed: Int {
         didSet {
             let normalized = TranslationSpeed(rawValue: translationSpeed)?.rawValue ?? TranslationSpeed.balanced.rawValue
@@ -157,62 +184,27 @@ enum TranslationBackend: String, CaseIterable, Codable, Identifiable, Sendable, 
             defaults.set(translationSpeed, forKey: "translationSpeed")
         }
     }
+    @Published var translationTiming: TranslationTiming {
+        didSet { defaults.set(translationTiming.rawValue, forKey: "translationTiming") }
+    }
+    @Published var speechEnabled: Bool { didSet { defaults.set(speechEnabled, forKey: "speechEnabled") } }
+    @Published var replaceOriginal: Bool { didSet { defaults.set(replaceOriginal, forKey: "replaceOriginal") } }
+    @Published var copyTranslation: Bool { didSet { defaults.set(copyTranslation, forKey: "copyTranslation") } }
+    @Published var replaceShortcut: ReplaceShortcut {
+        didSet { persistShortcut(replaceShortcut, keyCodeKey: "replaceShortcutKeyCode", modifiersKey: "replaceShortcutModifiers") }
+    }
+    @Published var copyShortcut: ReplaceShortcut {
+        didSet { persistShortcut(copyShortcut, keyCodeKey: "copyShortcutKeyCode", modifiersKey: "copyShortcutModifiers") }
+    }
+    @Published var translateShortcut: ReplaceShortcut {
+        didSet {
+            persistShortcut(
+                translateShortcut, keyCodeKey: "translateShortcutKeyCode", modifiersKey: "translateShortcutModifiers")
+        }
+    }
     @Published var excludedBundleIDs: Set<String> {
         didSet { defaults.set(Array(excludedBundleIDs), forKey: "excludedBundleIDs") }
     }
-    /// Called by AppState after construction so runtime services follow
-    /// settings edits immediately. It is intentionally main-actor isolated.
-    var onTranslationSettingsChanged: (() -> Void)?
-
-    /// Compatibility aliases for callers that use the longer setting names.
-    var translationSourceLanguage: Language {
-        get { sourceLanguage }
-        set { sourceLanguage = newValue }
-    }
-    var translationTargetLanguage: Language {
-        get { targetLanguage }
-        set { targetLanguage = newValue }
-    }
-    var llmConfigurations: [LLMModelConfiguration] {
-        get { llmModels }
-        set { llmModels = newValue }
-    }
-    var modelConfigurations: [LLMModelConfiguration] {
-        get { llmModels }
-        set { llmModels = newValue }
-    }
-    var llmTimeoutSeconds: Double {
-        get { llmFallbackTimeout }
-        set { llmFallbackTimeout = newValue }
-    }
-
-    /// Update one model in-place while preserving the order used for
-    /// fail-over. SwiftUI bindings call this helper so edits to a struct
-    /// element reliably trigger `@Published` and persistence.
-    func updateLLMModel(_ model: LLMModelConfiguration) {
-        guard let index = llmModels.firstIndex(where: { $0.id == model.id }) else { return }
-        var updated = model
-        // The visible timeout control is global. A zero per-model value tells
-        // the router to use that global threshold for every model.
-        updated.timeoutSeconds = 0
-        llmModels[index] = updated
-    }
-
-    func addLLMModel(_ model: LLMModelConfiguration) {
-        var model = model
-        model.timeoutSeconds = 0
-        llmModels.append(model)
-    }
-
-    func removeLLMModel(id: UUID) {
-        llmModels.removeAll { $0.id == id }
-        try? KeychainStore().deleteAPIKey(forModelID: id)
-    }
-
-    func moveLLMModels(from offsets: IndexSet, to destination: Int) {
-        llmModels.move(fromOffsets: offsets, toOffset: destination)
-    }
-
     private let defaults = UserDefaults.standard
 
     init() {
@@ -236,112 +228,48 @@ enum TranslationBackend: String, CaseIterable, Codable, Identifiable, Sendable, 
         }
         uiLanguage =
             UILanguage(rawValue: defaults.string(forKey: "uiLanguage") ?? UILanguage.chinese.rawValue) ?? .chinese
-        let storedSource = Self.readLanguage(defaults.string(forKey: "sourceLanguage"), fallback: .chinese)
-        let storedTarget = Self.readLanguage(defaults.string(forKey: "targetLanguage"), fallback: .english)
-        let normalizedTarget: Language
-        if storedTarget == storedSource {
-            normalizedTarget = storedSource == .english ? .chinese : .english
-        } else {
-            normalizedTarget = storedTarget
-        }
-        sourceLanguage = storedSource
-        targetLanguage = normalizedTarget
-        translationBackend =
-            TranslationBackend(rawValue: defaults.string(forKey: "translationBackend") ?? "") ?? .local
-        llmModels = Self.readLLMModels(defaults.data(forKey: "llmModels"))
-        llmFallbackTimeout = Self.clampLLMTimeout(defaults.object(forKey: "llmFallbackTimeout") as? Double ?? 8)
         let speedValue = TranslationSpeed(rawValue: defaults.object(forKey: "translationSpeed") as? Int ?? 450)?.rawValue
             ?? TranslationSpeed.balanced.rawValue
         translationSpeed = speedValue
+        translationTiming =
+            TranslationTiming(rawValue: defaults.string(forKey: "translationTiming") ?? TranslationTiming.pause.rawValue)
+            ?? .pause
+        speechEnabled = defaults.object(forKey: "speechEnabled") as? Bool ?? false
+        replaceOriginal = defaults.object(forKey: "replaceOriginal") as? Bool ?? false
+        copyTranslation = defaults.object(forKey: "copyTranslation") as? Bool ?? false
+        replaceShortcut = Self.loadShortcut(
+            defaults: defaults, keyCodeKey: "replaceShortcutKeyCode", modifiersKey: "replaceShortcutModifiers",
+            fallback: .optionShiftLeftBracket)
+        copyShortcut = Self.loadShortcut(
+            defaults: defaults, keyCodeKey: "copyShortcutKeyCode", modifiersKey: "copyShortcutModifiers",
+            fallback: .optionShiftRightBracket)
+        translateShortcut = Self.loadShortcut(
+            defaults: defaults, keyCodeKey: "translateShortcutKeyCode", modifiersKey: "translateShortcutModifiers",
+            fallback: .controlShiftT)
         excludedBundleIDs = Set(
             defaults.stringArray(forKey: "excludedBundleIDs") ?? [
                 "com.agilebits.onepassword7", "com.apple.keychainaccess", "com.apple.dt.Xcode", "com.openai.codex",
                 "cc.kristar.floattrans",
             ])
-        restoreAPIKeysFromKeychain()
         if defaults.object(forKey: "translationSpeed") == nil {
             defaults.set(speedValue, forKey: "translationSpeed")
         }
-        if defaults.object(forKey: "sourceLanguage") == nil {
-            defaults.set(sourceLanguage.rawValue, forKey: "sourceLanguage")
-        }
-        if defaults.object(forKey: "targetLanguage") == nil {
-            defaults.set(targetLanguage.rawValue, forKey: "targetLanguage")
-        }
-        if defaults.object(forKey: "translationBackend") == nil {
-            defaults.set(translationBackend.rawValue, forKey: "translationBackend")
-        }
-        if defaults.object(forKey: "llmFallbackTimeout") == nil {
-            defaults.set(llmFallbackTimeout, forKey: "llmFallbackTimeout")
-        }
-        migrateAPIKeysToKeychain()
     }
 
-    private static func readLanguage(_ rawValue: String?, fallback: Language) -> Language {
-        guard let rawValue, let language = Language(rawValue: rawValue) else { return fallback }
-        return language
-    }
-
-    private static func readLLMModels(_ data: Data?) -> [LLMModelConfiguration] {
-        guard let data else { return [] }
-        return (try? JSONDecoder().decode([LLMModelConfiguration].self, from: data)) ?? []
-    }
-
-    private func persistLLMModels() {
-        // Secrets never need to be in the preferences plist. Keep an empty
-        // value in the Codable snapshot and store each key in Keychain.
-        var publicModels = llmModels
-        let keychain = KeychainStore()
-        for index in publicModels.indices {
-            let model = publicModels[index]
-            if model.apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                try? keychain.deleteAPIKey(forModelID: model.id)
-            } else {
-                try? keychain.setAPIKey(model.apiKey, forModelID: model.id)
-            }
-            publicModels[index].apiKey = ""
-            publicModels[index].timeoutSeconds = 0
+    private static func loadShortcut(
+        defaults: UserDefaults, keyCodeKey: String, modifiersKey: String, fallback: ReplaceShortcut
+    ) -> ReplaceShortcut {
+        guard defaults.object(forKey: keyCodeKey) != nil, defaults.object(forKey: modifiersKey) != nil else {
+            return fallback
         }
-        guard let data = try? JSONEncoder().encode(publicModels) else { return }
-        defaults.set(data, forKey: "llmModels")
+        return ReplaceShortcut(
+            keyCode: UInt32(defaults.integer(forKey: keyCodeKey)),
+            carbonModifiers: UInt32(defaults.integer(forKey: modifiersKey)))
     }
 
-    private func migrateAPIKeysToKeychain() {
-        let keychain = KeychainStore()
-        var changed = false
-        for index in llmModels.indices {
-            let id = llmModels[index].id
-            if let stored = try? keychain.apiKey(forModelID: id), !stored.isEmpty {
-                if llmModels[index].apiKey != stored {
-                    llmModels[index].apiKey = stored
-                }
-            } else if !llmModels[index].apiKey.isEmpty {
-                // Import a legacy plaintext key once, then clear it from the
-                // in-memory Codable value before preferences are rewritten.
-                try? keychain.setAPIKey(llmModels[index].apiKey, forModelID: id)
-                llmModels[index].apiKey = llmModels[index].apiKey
-                changed = true
-            }
-            if llmModels[index].timeoutSeconds != 0 {
-                llmModels[index].timeoutSeconds = 0
-                changed = true
-            }
-        }
-        if changed { persistLLMModels() }
-    }
-
-    private func restoreAPIKeysFromKeychain() {
-        let keychain = KeychainStore()
-        for index in llmModels.indices {
-            if let value = try? keychain.apiKey(forModelID: llmModels[index].id), !value.isEmpty {
-                llmModels[index].apiKey = value
-            }
-        }
-    }
-
-    private static func clampLLMTimeout(_ value: Double) -> Double {
-        guard value.isFinite else { return 8 }
-        return min(max(value, 0.2), 300)
+    private func persistShortcut(_ shortcut: ReplaceShortcut, keyCodeKey: String, modifiersKey: String) {
+        defaults.set(Int(shortcut.keyCode), forKey: keyCodeKey)
+        defaults.set(Int(shortcut.carbonModifiers), forKey: modifiersKey)
     }
 
     private func updateLoginItem(_ enabled: Bool) {

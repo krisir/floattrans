@@ -2,7 +2,7 @@ name: FloatTrans
 options:
   bundleIdPrefix: cc.kristar
   deploymentTarget:
-    macOS: "13.0"
+    macOS: "15.0"
   createIntermediateGroups: true
   indentWidth: 4
   tabWidth: 4
@@ -10,7 +10,7 @@ settings:
   base:
     SWIFT_VERSION: "6.0"
     SWIFT_STRICT_CONCURRENCY: minimal
-    MACOSX_DEPLOYMENT_TARGET: "13.0"
+    MACOSX_DEPLOYMENT_TARGET: "15.0"
 configs:
   Debug: debug
   Release: release
@@ -18,11 +18,11 @@ targets:
   FloatTrans:
     type: application
     platform: macOS
-    deploymentTarget: "13.0"
+    deploymentTarget: "15.0"
     sources:
       - path: Sources/LiveEnglish
-    resources:
       - path: Resources/Assets.xcassets
+        buildPhase: resources
     settings:
       base:
         PRODUCT_NAME: FloatTrans
@@ -47,7 +47,7 @@ targets:
   LiveEnglishTests:
     type: bundle.unit-test
     platform: macOS
-    deploymentTarget: "13.0"
+    deploymentTarget: "15.0"
     sources:
       - path: Tests/LiveEnglishTests
     dependencies:
@@ -55,3 +55,4 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.liveenglish.tests
+        GENERATE_INFOPLIST_FILE: YES
