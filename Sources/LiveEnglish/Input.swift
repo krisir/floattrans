@@ -31,26 +31,8 @@ public struct InputSessionID: Hashable, Sendable {
 
 @MainActor final class InputCoordinator {
     private let logger = Logger(subsystem: "com.liveenglish.app", category: "pipeline")
-    private let extractor = SentenceExtractor(), detector = LanguageTextDetector(), debouncer = InputDebouncer()
+    private let extractor = SentenceExtractor(), detector = ChineseTextDetector(), debouncer = InputDebouncer()
     private var lastSentence = "", session: InputSessionID?
-
-    /// Source language selected in settings. Chinese remains the default for
-    /// existing installations, while the detector now accepts all languages
-    /// exposed by `Language`.
-    var sourceLanguage: Language = .chinese {
-        didSet {
-            guard sourceLanguage != oldValue else { return }
-            // Do not let a pending debounce for the previous language emit a
-            // sentence after the user changes direction.
-            debouncer.cancel()
-            lastSentence = ""
-        }
-    }
-
-    func setSourceLanguage(_ language: Language) {
-        sourceLanguage = language
-    }
-
     var isEnabled = true
     var excludedBundleIDs: Set<String> = []
     var delayMilliseconds: Int {
@@ -61,7 +43,12 @@ public struct InputSessionID: Hashable, Sendable {
         }
         set { debouncer.delay = .milliseconds(newValue) }
     }
-    var onSentence: ((String, String, InputSessionID, NSScreen?) -> Void)?, onEmpty: (() -> Void)?
+    var timing: TranslationTiming = .pause {
+        didSet {
+            if timing != .pause { debouncer.cancel() }
+        }
+    }
+    var onSentence: ((String, String, InputSessionID, NSScreen?, TextSnapshot) -> Void)?, onEmpty: (() -> Void)?
     func handle(_ snapshot: TextSnapshot, session: InputSessionID, screen: NSScreen?) {
         DiagnosticLog.write(
             "snapshot received bundle=\(snapshot.bundleIdentifier ?? "unknown") length=\(snapshot.text.count)")
@@ -75,43 +62,57 @@ public struct InputSessionID: Hashable, Sendable {
             return
         }
         self.session = session
-        let configuredLanguage = sourceLanguage
         if snapshot.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             debouncer.cancel()
             lastSentence = ""
             onEmpty?()
             return
         }
-        debouncer.submit(snapshot) { [weak self] snapshot in
-            guard let self, self.session == session else { return }
-            let sentence = self.extractor.extract(from: snapshot)
-            let matchesSourceLanguage = self.detector.contains(sentence, language: configuredLanguage)
-            DiagnosticLog.write(
-                "debounce fired sentenceLength=\(sentence.count) sourceLanguage=\(configuredLanguage.rawValue) matchesSource=\(matchesSourceLanguage)")
-            self.logger.info(
-                "debounce fired sentenceLength=\(sentence.count, privacy: .public) sourceLanguage=\(configuredLanguage.rawValue, privacy: .public) matchesSource=\(matchesSourceLanguage, privacy: .public)"
-            )
-            guard self.sourceLanguage == configuredLanguage,
-                !sentence.isEmpty,
-                matchesSourceLanguage,
-                sentence != self.lastSentence
-            else {
-                return
+        switch timing {
+        case .pause:
+            debouncer.submit(snapshot) { [weak self] snapshot in
+                guard let self, self.session == session else { return }
+                self.emit(snapshot, session: session, screen: screen)
             }
-            self.lastSentence = sentence
-            let nsText = snapshot.text as NSString
-            let sentenceRange = nsText.range(of: sentence, options: .backwards)
-            let sentenceKey =
-                sentenceRange.location == NSNotFound
-                ? "\(session.token.uuidString):\(sentence)" : nsText.substring(to: sentenceRange.location)
-            self.onSentence?(sentence, sentenceKey, session, screen)
+        case .completeSentence:
+            debouncer.cancel()
+            if extractor.isComplete(snapshot) {
+                emit(snapshot, session: session, screen: screen)
+            }
+        case .shortcut:
+            debouncer.cancel()
         }
+    }
+    func translateNow(_ snapshot: TextSnapshot, session: InputSessionID, screen: NSScreen?) {
+        guard isEnabled else { return }
+        self.session = session
+        emit(snapshot, session: session, screen: screen, force: true)
     }
     func reset() {
         debouncer.cancel()
         session = nil
         lastSentence = ""
         onEmpty?()
+    }
+
+    private func emit(
+        _ snapshot: TextSnapshot, session: InputSessionID, screen: NSScreen?, force: Bool = false
+    ) {
+        let sentence = extractor.extract(from: snapshot)
+        DiagnosticLog.write(
+            "debounce fired sentenceLength=\(sentence.count) hasChinese=\(detector.containsChinese(sentence))")
+        logger.info(
+            "debounce fired sentenceLength=\(sentence.count, privacy: .public) hasChinese=\(self.detector.containsChinese(sentence), privacy: .public)"
+        )
+        guard !sentence.isEmpty, detector.containsChinese(sentence) else { return }
+        if !force, sentence == lastSentence { return }
+        lastSentence = sentence
+        let nsText = snapshot.text as NSString
+        let sentenceRange = nsText.range(of: sentence, options: .backwards)
+        let sentenceKey =
+            sentenceRange.location == NSNotFound
+            ? "\(session.token.uuidString):\(sentence)" : nsText.substring(to: sentenceRange.location)
+        onSentence?(sentence, sentenceKey, session, screen, snapshot)
     }
 }
 
@@ -121,7 +122,7 @@ public struct InputSessionID: Hashable, Sendable {
     var excludedBundleIDs: Set<String> = []
     var onFocusChanged: (() -> Void)?
     private var appObserver: NSObjectProtocol?, elementObserver: AXObserver?, pollTimer: Timer?, focused: AXUIElement?,
-        lastText: String?, lastSelectedRange: NSRange?, session = InputSessionID(pid: 0)
+        lastText: String?, lastGoodText: String?, lastSelectedRange: NSRange?, session = InputSessionID(pid: 0)
     private var focusedApp: AXUIElement?
     private(set) var isRunning = false
     func start() {
@@ -171,6 +172,7 @@ public struct InputSessionID: Hashable, Sendable {
     private func refreshFocusedElement(app: NSRunningApplication) {
         guard !excludedBundleIDs.contains(app.bundleIdentifier ?? "") else {
             focused = nil
+            lastGoodText = nil
             return
         }
         guard let focusedApp else { return }
@@ -192,15 +194,23 @@ public struct InputSessionID: Hashable, Sendable {
         }
         guard let element else {
             focused = nil
+            lastGoodText = nil
             return
         }
         logElementDetails(element, prefix: "focused element bundle=\(app.bundleIdentifier ?? "unknown")")
         let resolved = resolveTextElement(from: element, depth: 3)
-        focused = resolved
         if let resolved {
+            if let focused, !CFEqual(focused, resolved) {
+                lastGoodText = nil
+                lastText = nil
+                lastSelectedRange = nil
+            }
+            focused = resolved
             logElementDetails(resolved, prefix: "resolved text element")
             observeValue(on: resolved)
         } else {
+            focused = nil
+            lastGoodText = nil
             DiagnosticLog.write("no supported text element found bundle=\(app.bundleIdentifier ?? "unknown")")
         }
     }
@@ -248,34 +258,115 @@ public struct InputSessionID: Hashable, Sendable {
         focused = nil
         focusedApp = nil
         lastText = nil
+        lastGoodText = nil
         lastSelectedRange = nil
     }
+    func snapshotNow() -> (snapshot: TextSnapshot, session: InputSessionID, screen: NSScreen?)? {
+        let captured = readFocusedText(force: true)
+        let live = captured?.snapshot ?? TextSnapshot(
+            pid: session.pid, bundleIdentifier: nil, text: "", selectedRange: nil)
+        let resolved = ShortcutSnapshotRecovery.resolve(live: live, lastGoodText: lastGoodText)
+        guard !resolved.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return (resolved, captured?.session ?? session, captured?.screen ?? NSScreen.main)
+    }
     private func readSnapshot() {
+        _ = readFocusedText(force: false)
+    }
+    private func readFocusedText(force: Bool) -> (snapshot: TextSnapshot, session: InputSessionID, screen: NSScreen?)?
+    {
         guard let app = NSWorkspace.shared.frontmostApplication,
             !excludedBundleIDs.contains(app.bundleIdentifier ?? "")
-        else { return }
-        guard let element = focused else { return }
-        var value: CFTypeRef?
-        var range: CFTypeRef?
-        let result = AXUIElementCopyAttributeValue(element, kAXValueAttribute as CFString, &value)
-        guard result == .success, let text = value as? String else { return }
-        _ = AXUIElementCopyAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, &range)
+        else { return nil }
+        guard let element = focused else { return nil }
+        guard let live = readElementText(element) else { return nil }
+        let text = live.text
+        let selected = live.selected
+        let hasContent = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        if !hasContent {
+            guard force else { return nil }
+        } else {
+            if !force, text == lastText, selected == lastSelectedRange { return nil }
+            lastGoodText = text
+            lastText = text
+            lastSelectedRange = selected
+        }
+        DiagnosticLog.write("AXValue read success length=\(text.count)")
+        logger.info("AXValue read success length=\(text.count, privacy: .public)")
+        let screen = NSScreen.main
+        let snapshot = TextSnapshot(
+            pid: session.pid, bundleIdentifier: app.bundleIdentifier, text: text, selectedRange: selected)
+        if !force {
+            onSnapshot?(snapshot, session, screen)
+        }
+        return (snapshot, session, screen)
+    }
+
+    private func readElementText(_ element: AXUIElement) -> (text: String, selected: NSRange?)? {
         var selected: NSRange?
+        var range: CFTypeRef?
+        _ = AXUIElementCopyAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, &range)
         if let range {
             var r = CFRange()
             let ax = range as! AXValue
             if AXValueGetValue(ax, .cfRange, &r) { selected = NSRange(location: r.location, length: r.length) }
         }
-        guard text != lastText || selected != lastSelectedRange else { return }
-        lastText = text
-        lastSelectedRange = selected
-        DiagnosticLog.write("AXValue read success length=\(text.count)")
-        logger.info("AXValue read success length=\(text.count, privacy: .public)")
-        let screen = NSScreen.main
-        onSnapshot?(
-            TextSnapshot(
-                pid: session.pid, bundleIdentifier: app.bundleIdentifier, text: text, selectedRange: selected),
-            session, screen)
+        var value: CFTypeRef?
+        let valueStatus = AXUIElementCopyAttributeValue(element, kAXValueAttribute as CFString, &value)
+        if valueStatus == .success, let text = value as? String,
+            !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        {
+            return (text, selected)
+        }
+        if let ranged = stringForFullRange(element) {
+            return (ranged, selected)
+        }
+        if valueStatus == .success, let text = value as? String {
+            return (text, selected)
+        }
+        return nil
+    }
+
+    private func stringForFullRange(_ element: AXUIElement) -> String? {
+        var countRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXNumberOfCharactersAttribute as CFString, &countRef) == .success
+        else { return nil }
+        let count: Int
+        if let number = countRef as? NSNumber {
+            count = number.intValue
+        } else {
+            return nil
+        }
+        guard count > 0 else { return nil }
+        var range = CFRange(location: 0, length: count)
+        guard let axRange = AXValueCreate(.cfRange, &range) else { return nil }
+        var stringRef: CFTypeRef?
+        let status = AXUIElementCopyParameterizedAttributeValue(
+            element, kAXStringForRangeParameterizedAttribute as CFString, axRange, &stringRef)
+        guard status == .success, let text = stringRef as? String,
+            !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return nil }
+        return text
+    }
+
+    func replace(sourceWithTerminator: String, translation: String) -> Bool {
+        guard let element = focused else { return false }
+        var value: CFTypeRef?
+        let read = AXUIElementCopyAttributeValue(element, kAXValueAttribute as CFString, &value)
+        let current = read == .success ? value as? String : nil
+        return FocusedFieldReplacer.replace(
+            currentText: current, sourceWithTerminator: sourceWithTerminator, translation: translation
+        ) { text, caret in
+            let write = AXUIElementSetAttributeValue(element, kAXValueAttribute as CFString, text as CFTypeRef)
+            guard write == .success else { return false }
+            var range = CFRange(location: caret, length: 0)
+            if let axRange = AXValueCreate(.cfRange, &range) {
+                _ = AXUIElementSetAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, axRange)
+            }
+            lastText = text
+            lastGoodText = text
+            lastSelectedRange = NSRange(location: caret, length: 0)
+            return true
+        }
     }
     private func logElementDetails(_ element: AXUIElement, prefix: String = "AX element") {
         var names: CFArray?
@@ -311,5 +402,29 @@ extension AccessibilityMonitor {
         } else {
             readSnapshot()
         }
+    }
+}
+
+enum TranslationClipboard {
+    static func copy(_ text: String?) -> Bool {
+        copy(text, using: SystemPasteboard())
+    }
+
+    static func copy(_ text: String?, using pasteboard: PasteboardWriting) -> Bool {
+        guard let text, !text.isEmpty else { return false }
+        pasteboard.writeString(text)
+        return true
+    }
+}
+
+protocol PasteboardWriting {
+    func writeString(_ text: String)
+}
+
+struct SystemPasteboard: PasteboardWriting {
+    func writeString(_ text: String) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
     }
 }

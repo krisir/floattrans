@@ -1,6 +1,5 @@
 import AppKit
 import SwiftUI
-@preconcurrency import Translation
 
 struct SettingsRow<Content: View>: View {
     let label: String
@@ -214,45 +213,8 @@ struct SettingsView: View {
 
     private var translationPage: some View {
         settingsPage(title: L10n.tabTranslation(lang)) {
-            SettingsRow(label: L10n.translationBackend(lang)) {
-                Picker("", selection: $settings.translationBackend) {
-                    ForEach(TranslationBackend.allCases) { backend in
-                        Text(backend.displayName(for: lang)).tag(backend)
-                    }
-                }
-                .labelsHidden()
-                .frame(maxWidth: 220)
-            }
-            SettingsRow(label: L10n.sourceLanguage(lang)) {
-                Picker(
-                    "",
-                    selection: Binding(
-                        get: { settings.sourceLanguage },
-                        set: { newSource in
-                            settings.sourceLanguage = newSource
-                            if settings.targetLanguage == newSource {
-                                settings.targetLanguage = newSource == .english ? .chinese : .english
-                            }
-                        })
-                ) {
-                    ForEach(Language.allCases) { language in
-                        Text(languageName(language)).tag(language)
-                    }
-                }
-                .labelsHidden()
-                .frame(maxWidth: 220)
-            }
-            SettingsRow(label: L10n.targetLanguage(lang)) {
-                Picker("", selection: $settings.targetLanguage) {
-                    ForEach(Language.allCases.filter { $0 != settings.sourceLanguage }) { language in
-                        Text(languageName(language)).tag(language)
-                    }
-                }
-                .labelsHidden()
-                .frame(maxWidth: 220)
-            }
             SettingsRow(label: L10n.translationDirection(lang)) {
-                Text(L10n.translationDirectionValue(settings.sourceLanguage, settings.targetLanguage, lang))
+                Text(L10n.translationDirectionValue(lang))
                     .foregroundStyle(.secondary)
             }
             SettingsRow(label: L10n.translationSpeed(lang)) {
@@ -273,79 +235,93 @@ struct SettingsView: View {
                 .labelsHidden()
                 .frame(maxWidth: 260)
             }
-            if settings.translationBackend == .local, #available(macOS 26.0, *) {
-                SettingsRow(label: L10n.languageResources(lang)) {
-                    LanguageResourceRow(
-                        language: lang, sourceLanguage: settings.sourceLanguage, targetLanguage: settings.targetLanguage)
+            SettingsRow(label: L10n.translationTiming(lang)) {
+                Picker(
+                    "",
+                    selection: Binding(
+                        get: { settings.translationTiming },
+                        set: { state.setTranslationTiming($0) })
+                ) {
+                    ForEach(TranslationTiming.allCases, id: \.self) { mode in
+                        Text(mode.displayName(for: lang)).tag(mode)
+                    }
+                }
+                .labelsHidden()
+                .frame(maxWidth: 260)
+            }
+            if settings.translationTiming == .shortcut {
+                SettingsRow(label: L10n.translateShortcut(lang)) {
+                    ShortcutRecorderButton(
+                        language: lang,
+                        shortcut: settings.translateShortcut,
+                        onCommit: { state.setTranslateShortcut($0) })
                 }
             }
-            if settings.translationBackend == .local {
-                Text(L10n.localTranslationPrivacy(lang))
+            SettingsRow(label: L10n.languageResources(lang)) {
+                LanguageResourceRow(language: lang, holder: state.translationHolder)
+            }
+            SettingsGroupHeader(title: L10n.groupActions(lang))
+            SettingsRow(label: L10n.replaceOriginal(lang)) {
+                Toggle(
+                    "",
+                    isOn: Binding(
+                        get: { settings.replaceOriginal },
+                        set: { state.setReplaceOriginal($0) })
+                )
+                .labelsHidden()
+                .toggleStyle(.switch)
+            }
+            SettingsRow(label: L10n.replaceShortcut(lang)) {
+                ShortcutRecorderButton(
+                    language: lang,
+                    shortcut: settings.replaceShortcut,
+                    onCommit: { state.setReplaceShortcut($0) })
+            }
+            Text(L10n.replaceOriginalHint(lang))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.leading, 162)
+            SettingsRow(label: L10n.copyTranslation(lang)) {
+                Toggle(
+                    "",
+                    isOn: Binding(
+                        get: { settings.copyTranslation },
+                        set: { state.setCopyTranslation($0) })
+                )
+                .labelsHidden()
+                .toggleStyle(.switch)
+            }
+            SettingsRow(label: L10n.copyShortcut(lang)) {
+                ShortcutRecorderButton(
+                    language: lang,
+                    shortcut: settings.copyShortcut,
+                    onCommit: { state.setCopyShortcut($0) })
+            }
+            Text(L10n.copyTranslationHint(lang))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.leading, 162)
+            SettingsGroupHeader(title: L10n.groupSpeech(lang))
+            SettingsRow(label: L10n.readTranslationsAloud(lang)) {
+                Toggle(
+                    "",
+                    isOn: Binding(
+                        get: { settings.speechEnabled },
+                        set: {
+                            settings.speechEnabled = $0
+                            if !$0 { state.speech.stop() }
+                        })
+                )
+                .labelsHidden()
+                .toggleStyle(.switch)
+            }
+            if settings.speechEnabled, settings.translationTiming == .pause {
+                Text(L10n.autoSpeakTimingHint(lang))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .padding(.leading, 162)
-            } else {
-                modelSettingsSection
             }
         }
-    }
-
-    @ViewBuilder
-    private var modelSettingsSection: some View {
-        SettingsGroupHeader(title: L10n.modelSettings(lang))
-        Text(L10n.modelSettingsHint(lang))
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .padding(.leading, 162)
-        SettingsRow(label: L10n.failoverTimeout(lang)) {
-            HStack(spacing: 8) {
-                Slider(value: $settings.llmFallbackTimeout, in: 1...120, step: 1)
-                Text(L10n.timeoutSeconds(lang, Int(settings.llmFallbackTimeout)))
-                    .monospacedDigit()
-                    .frame(width: 112, alignment: .trailing)
-            }
-            .frame(maxWidth: 290)
-        }
-        Text(L10n.apiKeyKeychainHint(lang))
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .padding(.leading, 162)
-        if settings.llmModels.isEmpty {
-            Text(L10n.noModels(lang))
-                .foregroundStyle(.secondary)
-                .padding(.leading, 162)
-        } else {
-            ForEach(settings.llmModels) { model in
-                LLMModelEditor(
-                    model: model,
-                    language: lang,
-                    save: { settings.updateLLMModel($0) },
-                    remove: { settings.removeLLMModel(id: model.id) })
-                    .padding(.leading, 162)
-            }
-            .onMove(perform: settings.moveLLMModels)
-        }
-        SettingsRow(label: "") {
-            Button(L10n.addModel(lang)) { settings.addLLMModel(defaultModel()) }
-                .buttonStyle(.bordered)
-        }
-        Text(L10n.llmTranslationPrivacy(lang))
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .padding(.leading, 162)
-    }
-
-    private func languageName(_ language: Language) -> String {
-        lang == .chinese ? language.chineseName : language.englishName
-    }
-
-    private func defaultModel() -> LLMModelConfiguration {
-        LLMModelConfiguration(
-            name: lang == .chinese ? "新的 API 模型" : "New API Model",
-            provider: .openAICompatible,
-            baseURL: LLMProvider.openAICompatible.defaultBaseURL,
-            model: "gpt-4.1-mini",
-            timeoutSeconds: 0)
     }
 
     private var overlayPage: some View {
@@ -515,113 +491,75 @@ struct ExcludedAppRow: View {
     }
 }
 
-/// A compact, expandable editor for one ordered model. The parent owns the
-/// array value so every edit is persisted immediately; the row keeps a draft
-/// only to avoid rebuilding text fields while SwiftUI publishes changes.
-struct LLMModelEditor: View {
-    @State private var draft: LLMModelConfiguration
+struct ShortcutRecorderButton: View {
     let language: UILanguage
-    let save: (LLMModelConfiguration) -> Void
-    let remove: () -> Void
-
-    init(model: LLMModelConfiguration, language: UILanguage, save: @escaping (LLMModelConfiguration) -> Void, remove: @escaping () -> Void) {
-        _draft = State(initialValue: model)
-        self.language = language
-        self.save = save
-        self.remove = remove
-    }
+    let shortcut: ReplaceShortcut
+    let onCommit: (ReplaceShortcut) -> Void
+    @State private var recording = false
 
     var body: some View {
-        DisclosureGroup {
-            VStack(alignment: .leading, spacing: 8) {
-                SettingsRow(label: L10n.modelName(language)) {
-                    TextField(L10n.modelPlaceholder(language), text: $draft.name)
-                        .textFieldStyle(.roundedBorder)
-                }
-                SettingsRow(label: L10n.provider(language)) {
-                    Picker("", selection: $draft.provider) {
-                        ForEach(LLMProvider.allCases) { provider in
-                            Text(L10n.providerName(provider, language)).tag(provider)
-                        }
-                    }
-                    .labelsHidden()
-                }
-                SettingsRow(label: L10n.endpointURL(language)) {
-                    TextField(L10n.urlPlaceholder(language), text: $draft.baseURL)
-                        .textFieldStyle(.roundedBorder)
-                }
-                SettingsRow(label: L10n.apiKey(language)) {
-                    SecureField("", text: $draft.apiKey)
-                        .textFieldStyle(.roundedBorder)
-                }
-                SettingsRow(label: L10n.modelID(language)) {
-                    TextField(L10n.modelIDPlaceholder(language), text: $draft.model)
-                        .textFieldStyle(.roundedBorder)
-                }
-                SettingsRow(label: L10n.thinkingMode(language)) {
-                    Picker("", selection: $draft.thinking) {
-                        ForEach(LLMThinkingMode.allCases) { mode in
-                            Text(thinkingName(mode)).tag(mode)
-                        }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.segmented)
-                }
-                SettingsRow(label: L10n.prompt(language)) {
-                    TextEditor(text: $draft.systemPrompt)
-                        .font(.body)
-                        .frame(minHeight: 66)
-                        .overlay(RoundedRectangle(cornerRadius: 5).stroke(Color.secondary.opacity(0.25)))
-                        .overlay(alignment: .topLeading) {
-                            if draft.systemPrompt.isEmpty {
-                                Text(L10n.promptPlaceholder(language))
-                                    .foregroundStyle(.secondary)
-                                    .padding(.horizontal, 5)
-                                    .padding(.vertical, 8)
-                                    .allowsHitTesting(false)
-                            }
-                        }
-                }
-                HStack {
-                    Toggle(L10n.modelEnabled(language), isOn: $draft.enabled)
-                        .toggleStyle(.checkbox)
-                    Spacer()
-                    Button(L10n.removeModel(language), role: .destructive, action: remove)
-                }
-            }
-            .padding(.top, 8)
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "line.3.horizontal")
-                    .foregroundStyle(.secondary)
-                Text(draft.name.isEmpty ? L10n.modelPlaceholder(language) : draft.name)
-                    .font(.subheadline.weight(.medium))
-                Text(draft.model)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Circle()
-                    .fill(draft.enabled ? Color.green : Color.secondary.opacity(0.35))
-                    .frame(width: 8, height: 8)
-            }
+        Button(recording ? L10n.shortcutRecording(language) : shortcut.displayString) {
+            recording = true
         }
-        .onChange(of: draft) { updated in save(updated) }
-    }
-
-    private func thinkingName(_ mode: LLMThinkingMode) -> String {
-        switch mode {
-        case .automatic: return L10n.thinkingAutomatic(language)
-        case .nonThinking: return L10n.thinkingOff(language)
-        case .thinking: return L10n.thinkingOn(language)
+        .background {
+            ShortcutKeyMonitor(isActive: $recording) { event in
+                if UInt32(event.keyCode) == ReplaceShortcut.escapeKeyCode {
+                    recording = false
+                    return
+                }
+                if let recorded = ReplaceShortcut.from(event: event) {
+                    onCommit(recorded)
+                    recording = false
+                }
+            }
         }
     }
 }
 
-@available(macOS 26.0, *)
+private struct ShortcutKeyMonitor: NSViewRepresentable {
+    @Binding var isActive: Bool
+    var onKeyDown: (NSEvent) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        context.coordinator.install()
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.isActive = isActive
+        context.coordinator.onKeyDown = onKeyDown
+    }
+
+    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
+        coordinator.remove()
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    final class Coordinator {
+        var isActive = false
+        var onKeyDown: ((NSEvent) -> Void)?
+        private var monitor: Any?
+
+        func install() {
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                guard let self, self.isActive else { return event }
+                self.onKeyDown?(event)
+                return nil
+            }
+        }
+
+        func remove() {
+            if let monitor { NSEvent.removeMonitor(monitor) }
+            monitor = nil
+        }
+    }
+}
+
 struct LanguageResourceRow: View {
     let language: UILanguage
-    let sourceLanguage: Language
-    let targetLanguage: Language
+    let holder: TranslationSessionHolder
 
     private enum PackState {
         case checking, installed, unsupported, available, downloading, failed
@@ -629,17 +567,6 @@ struct LanguageResourceRow: View {
 
     @State private var packState: PackState = .checking
     @State private var progressText = ""
-    @State private var configuration: TranslationSession.Configuration
-    @State private var requested = false
-
-    init(language: UILanguage, sourceLanguage: Language, targetLanguage: Language) {
-        self.language = language
-        self.sourceLanguage = sourceLanguage
-        self.targetLanguage = targetLanguage
-        _configuration = State(
-            initialValue: TranslationSession.Configuration(
-                source: sourceLanguage.locale, target: targetLanguage.locale))
-    }
 
     var body: some View {
         Group {
@@ -648,10 +575,10 @@ struct LanguageResourceRow: View {
                 Text(L10n.languagesChecking(language))
                     .foregroundStyle(.secondary)
             case .installed:
-                Text(L10n.languagesReady(sourceLanguage, targetLanguage, language))
+                Text(L10n.languagesReady(language))
                     .foregroundStyle(.secondary)
             case .unsupported:
-                Text(L10n.languagesUnsupported(sourceLanguage, targetLanguage, language))
+                Text(L10n.languagesUnsupported(language))
                     .foregroundStyle(.secondary)
             case .available:
                 Button(L10n.downloadLanguage(language)) {
@@ -668,20 +595,18 @@ struct LanguageResourceRow: View {
                 }
             }
         }
-        .task(id: "\(sourceLanguage.rawValue)-\(targetLanguage.rawValue)") {
-            requested = false
-            configuration = TranslationSession.Configuration(
-                source: sourceLanguage.locale, target: targetLanguage.locale)
-            await refreshAvailability()
-        }
-        .translationTask(configuration) { session in
-            guard requested else { return }
+        .task { await refreshAvailability() }
+    }
+
+    private func startDownload() {
+        packState = .downloading
+        progressText = L10n.languagesPreparing(language)
+        Task {
             do {
-                try await session.prepareTranslation()
+                try await holder.prepareTranslation()
                 progressText = L10n.languagesDownloading(language)
-                let availability = LanguageAvailability()
                 for _ in 0..<120 {
-                    let state = await availability.status(from: sourceLanguage.locale, to: targetLanguage.locale)
+                    let state = await holder.languageAvailability()
                     if state == .installed {
                         packState = .installed
                         return
@@ -692,7 +617,7 @@ struct LanguageResourceRow: View {
                     }
                     try await Task.sleep(for: .seconds(1))
                 }
-                progressText = L10n.languagesStillDownloading(sourceLanguage, targetLanguage, language)
+                progressText = L10n.languagesStillDownloading(language)
                 packState = .failed
             } catch {
                 progressText = L10n.languagesDownloadFailed(language)
@@ -701,16 +626,8 @@ struct LanguageResourceRow: View {
         }
     }
 
-    private func startDownload() {
-        requested = true
-        packState = .downloading
-        progressText = L10n.languagesPreparing(language)
-        configuration.invalidate()
-    }
-
     private func refreshAvailability() async {
-        let availability = LanguageAvailability()
-        let state = await availability.status(from: sourceLanguage.locale, to: targetLanguage.locale)
+        let state = await holder.languageAvailability()
         switch state {
         case .installed: packState = .installed
         case .unsupported: packState = .unsupported

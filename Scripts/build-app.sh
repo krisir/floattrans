@@ -17,7 +17,7 @@ xcrun actool \
   --output-partial-info-plist "$PARTIAL_PLIST" \
   --app-icon AppIcon \
   --platform macosx \
-  --minimum-deployment-target 13.0 \
+  --minimum-deployment-target 15.0 \
   --compile "$APP/Contents/Resources" \
   Resources/Assets.xcassets
 if [[ -s "$PARTIAL_PLIST" ]]; then
