@@ -10,6 +10,7 @@ final class SettingsStoreTests: XCTestCase {
         "speechVolume", "autoSpeakPolicy", "excludedBundleIDs", "replaceOriginal", "copyTranslation",
         "replaceShortcutKeyCode", "replaceShortcutModifiers", "copyShortcutKeyCode", "copyShortcutModifiers",
         "translationTiming", "translateShortcutKeyCode", "translateShortcutModifiers",
+        "sourceLanguage", "targetLanguage", "translationBackend", "llmModels", "llmFallbackTimeout",
     ]
 
     func testDisplayNamesAndRenamedBehaviorRawValue() {
@@ -120,6 +121,30 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(store.copyShortcut, .optionShiftRightBracket)
         XCTAssertEqual(store.translationTiming, .pause)
         XCTAssertEqual(store.translateShortcut, .controlShiftT)
+        XCTAssertEqual(store.sourceLanguage, .chinese)
+        XCTAssertEqual(store.targetLanguage, .english)
+        XCTAssertEqual(store.translationBackend, .local)
+        XCTAssertEqual(store.llmFallbackTimeout, 8)
+    }
+
+    func testTranslationDirectionAndBackendPersist() {
+        let defaults = UserDefaults.standard
+        let saved = snapshot(defaults)
+        defer { restore(defaults, saved) }
+
+        for key in keys { defaults.removeObject(forKey: key) }
+        defaults.set(false, forKey: "launchAtLogin")
+        let store = SettingsStore()
+        store.sourceLanguage = .english
+        store.targetLanguage = .russian
+        store.translationBackend = .languageModel
+        store.llmFallbackTimeout = 12
+
+        let reloaded = SettingsStore()
+        XCTAssertEqual(reloaded.sourceLanguage, .english)
+        XCTAssertEqual(reloaded.targetLanguage, .russian)
+        XCTAssertEqual(reloaded.translationBackend, .languageModel)
+        XCTAssertEqual(reloaded.llmFallbackTimeout, 12)
     }
 
     func testUILanguagePersistsAndDefaultsToChinese() {

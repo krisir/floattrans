@@ -26,7 +26,6 @@ public enum KeychainStoreError: Error, Equatable, LocalizedError, Sendable {
         }
     }
 }
-
 /// A small, synchronous wrapper around macOS Keychain generic-password
 /// items. API keys should be stored here instead of in UserDefaults or a
 /// Codable settings blob.
@@ -188,4 +187,3 @@ private extension KeychainStore {
         return query
     }
 }
-

@@ -1,18 +1,35 @@
 import AppKit
 import SwiftUI
+@preconcurrency import Translation
 
 struct SettingsRow<Content: View>: View {
     let label: String
     @ViewBuilder var content: () -> Content
 
     var body: some View {
-        HStack(alignment: .center, spacing: 12) {
+        HStack(alignment: .center, spacing: 16) {
             Text(label)
                 .multilineTextAlignment(.trailing)
-                .frame(width: 150, alignment: .trailing)
+                .frame(width: 168, alignment: .trailing)
             content()
             Spacer(minLength: 0)
         }
+    }
+}
+
+/// A light material panel keeps dense settings readable while preserving the
+/// native macOS appearance in both light and dark mode.
+struct SettingsPanel<Content: View>: View {
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14, content: content)
+            .padding(18)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+            }
     }
 }
 
@@ -111,6 +128,7 @@ struct SettingsView: View {
     @ObservedObject var state: AppState
     @ObservedObject private var settings: SettingsStore
     @State private var selectedPage: Page = .general
+    @State private var draggedModelID: UUID?
 
     init(state: AppState) {
         self.state = state
@@ -125,9 +143,9 @@ struct SettingsView: View {
             Divider()
             pageContent
         }
-        .frame(minWidth: 520, idealWidth: 520, minHeight: 360, idealHeight: 480)
+        .frame(minWidth: 680, idealWidth: 760, minHeight: 520, idealHeight: 700)
         .onAppear { state.updateSettingsWindowTitle() }
-        .onChange(of: settings.uiLanguage) { _ in state.updateSettingsWindowTitle() }
+        .onChange(of: settings.uiLanguage) { _, _ in state.updateSettingsWindowTitle() }
     }
 
     private var tabBar: some View {
@@ -153,6 +171,10 @@ struct SettingsView: View {
                 .foregroundStyle(selected ? Color.accentColor : Color.secondary)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 6)
+                .background {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(selected ? Color.accentColor.opacity(0.12) : Color.clear)
+                }
         }
         .buttonStyle(.plain)
         .controlSize(.small)
@@ -213,8 +235,45 @@ struct SettingsView: View {
 
     private var translationPage: some View {
         settingsPage(title: L10n.tabTranslation(lang)) {
+            SettingsRow(label: L10n.translationBackend(lang)) {
+                Picker("", selection: $settings.translationBackend) {
+                    ForEach(TranslationBackend.allCases) { backend in
+                        Text(backend.displayName(for: lang)).tag(backend)
+                    }
+                }
+                .labelsHidden()
+                .frame(maxWidth: 220)
+            }
+            SettingsRow(label: L10n.sourceLanguage(lang)) {
+                Picker(
+                    "",
+                    selection: Binding(
+                        get: { settings.sourceLanguage },
+                        set: { source in
+                            settings.sourceLanguage = source
+                            if settings.targetLanguage == source {
+                                settings.targetLanguage = source == .english ? .chinese : .english
+                            }
+                        })
+                ) {
+                    ForEach(Language.allCases) { language in
+                        Text(languageName(language)).tag(language)
+                    }
+                }
+                .labelsHidden()
+                .frame(maxWidth: 220)
+            }
+            SettingsRow(label: L10n.targetLanguage(lang)) {
+                Picker("", selection: $settings.targetLanguage) {
+                    ForEach(Language.allCases.filter { $0 != settings.sourceLanguage }) { language in
+                        Text(languageName(language)).tag(language)
+                    }
+                }
+                .labelsHidden()
+                .frame(maxWidth: 220)
+            }
             SettingsRow(label: L10n.translationDirection(lang)) {
-                Text(L10n.translationDirectionValue(lang))
+                Text(L10n.translationDirectionValue(settings.sourceLanguage, settings.targetLanguage, lang))
                     .foregroundStyle(.secondary)
             }
             SettingsRow(label: L10n.translationSpeed(lang)) {
@@ -257,8 +316,19 @@ struct SettingsView: View {
                         onCommit: { state.setTranslateShortcut($0) })
                 }
             }
-            SettingsRow(label: L10n.languageResources(lang)) {
-                LanguageResourceRow(language: lang, holder: state.translationHolder)
+            if settings.translationBackend == .local {
+                SettingsRow(label: L10n.languageResources(lang)) {
+                    LanguageResourceRow(
+                        language: lang,
+                        sourceLanguage: settings.sourceLanguage,
+                        targetLanguage: settings.targetLanguage)
+                }
+                Text(L10n.localTranslationPrivacy(lang))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 184)
+            } else {
+                modelSettingsSection
             }
             SettingsGroupHeader(title: L10n.groupActions(lang))
             SettingsRow(label: L10n.replaceOriginal(lang)) {
@@ -280,7 +350,7 @@ struct SettingsView: View {
             Text(L10n.replaceOriginalHint(lang))
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .padding(.leading, 162)
+                .padding(.leading, 184)
             SettingsRow(label: L10n.copyTranslation(lang)) {
                 Toggle(
                     "",
@@ -300,7 +370,7 @@ struct SettingsView: View {
             Text(L10n.copyTranslationHint(lang))
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .padding(.leading, 162)
+                .padding(.leading, 184)
             SettingsGroupHeader(title: L10n.groupSpeech(lang))
             SettingsRow(label: L10n.readTranslationsAloud(lang)) {
                 Toggle(
@@ -319,9 +389,83 @@ struct SettingsView: View {
                 Text(L10n.autoSpeakTimingHint(lang))
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .padding(.leading, 162)
+                    .padding(.leading, 184)
             }
         }
+    }
+
+    @ViewBuilder
+    private var modelSettingsSection: some View {
+        SettingsGroupHeader(title: L10n.modelSettings(lang))
+        Text(L10n.modelSettingsHint(lang))
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.leading, 184)
+        SettingsRow(label: L10n.failoverTimeout(lang)) {
+            HStack(spacing: 8) {
+                Slider(value: $settings.llmFallbackTimeout, in: 1...120, step: 1)
+                Text(L10n.timeoutSeconds(lang, Int(settings.llmFallbackTimeout)))
+                    .monospacedDigit()
+                    .frame(width: 112, alignment: .trailing)
+            }
+            .frame(maxWidth: 290)
+        }
+        Text(L10n.apiKeyKeychainHint(lang))
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.leading, 184)
+        if settings.llmModels.isEmpty {
+            Text(L10n.noModels(lang))
+                .foregroundStyle(.secondary)
+                .padding(.leading, 184)
+        } else {
+            // This is intentionally a VStack rather than a nested List: the
+            // page's outer ScrollView is the only scroll container. Rows are
+            // still draggable to reorder models within that single viewport.
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(settings.llmModels) { model in
+                    LLMModelEditor(
+                        model: model,
+                        language: lang,
+                        save: { settings.updateLLMModel($0) },
+                        remove: { settings.removeLLMModel(id: model.id) })
+                        .padding(10)
+                        .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                        .onDrag {
+                            draggedModelID = model.id
+                            return NSItemProvider(object: model.id.uuidString as NSString)
+                        }
+                        .onDrop(
+                            of: [.text],
+                            delegate: ModelOrderDropDelegate(
+                                targetID: model.id,
+                                models: $settings.llmModels,
+                                draggedID: $draggedModelID))
+                }
+            }
+            .padding(.leading, 184)
+        }
+        SettingsRow(label: "") {
+            Button(L10n.addModel(lang)) { settings.addLLMModel(defaultModel()) }
+                .buttonStyle(.bordered)
+        }
+        Text(L10n.llmTranslationPrivacy(lang))
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.leading, 184)
+    }
+
+    private func languageName(_ language: Language) -> String {
+        lang == .chinese ? language.chineseName : language.englishName
+    }
+
+    private func defaultModel() -> LLMModelConfiguration {
+        LLMModelConfiguration(
+            name: lang == .chinese ? "新的 API 模型" : "New API Model",
+            provider: .openAICompatible,
+            baseURL: LLMProvider.openAICompatible.defaultBaseURL,
+            model: LLMProvider.openAICompatible.defaultModel,
+            timeoutSeconds: 0)
     }
 
     private var overlayPage: some View {
@@ -446,16 +590,24 @@ struct SettingsView: View {
         }
     }
 
-    private func settingsPage<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
+    private func settingsPage<Content: View>(title: String, @ViewBuilder content: @escaping () -> Content) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                Text(title)
-                    .font(.title2.bold())
-                content()
+                HStack(spacing: 10) {
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(Color.accentColor)
+                    Text(title)
+                        .font(.title2.bold())
+                    Spacer()
+                }
+                SettingsPanel { content() }
             }
-            .padding(24)
+            .padding(.horizontal, 28)
+            .padding(.vertical, 24)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .background(Color(nsColor: .windowBackgroundColor).opacity(0.72))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
@@ -557,9 +709,165 @@ private struct ShortcutKeyMonitor: NSViewRepresentable {
     }
 }
 
+private struct ModelOrderDropDelegate: DropDelegate {
+    let targetID: UUID
+    @Binding var models: [LLMModelConfiguration]
+    @Binding var draggedID: UUID?
+
+    func dropEntered(info: DropInfo) {
+        guard let draggedID, draggedID != targetID,
+            let from = models.firstIndex(where: { $0.id == draggedID }),
+            let to = models.firstIndex(where: { $0.id == targetID })
+        else { return }
+        withAnimation(.snappy) {
+            models.move(fromOffsets: IndexSet(integer: from), toOffset: to > from ? to + 1 : to)
+        }
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        draggedID = nil
+        return true
+    }
+}
+
+/// Editable row for one provider in the user-defined fail-over order.
+struct LLMModelEditor: View {
+    @State private var draft: LLMModelConfiguration
+    @State private var isExpanded = false
+    let language: UILanguage
+    let save: (LLMModelConfiguration) -> Void
+    let remove: () -> Void
+
+    init(
+        model: LLMModelConfiguration,
+        language: UILanguage,
+        save: @escaping (LLMModelConfiguration) -> Void,
+        remove: @escaping () -> Void
+    ) {
+        var initialDraft = model
+        // Older saved configurations used an empty string to mean the
+        // built-in prompt. Show the actual default in the editor so it can be
+        // reviewed and modified without asking the user to reconstruct it.
+        if initialDraft.systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            initialDraft.systemPrompt = LLMTranslationPrompt.defaultSystemPrompt
+        }
+        _draft = State(initialValue: initialDraft)
+        self.language = language
+        self.save = save
+        self.remove = remove
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Button {
+                withAnimation(.snappy) { isExpanded.toggle() }
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "line.3.horizontal")
+                        .foregroundStyle(.tertiary)
+                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 10)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(draft.name.isEmpty ? L10n.modelPlaceholder(language) : draft.name)
+                            .font(.subheadline.weight(.semibold))
+                        if !draft.model.isEmpty {
+                            Text(draft.model)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    Spacer()
+                    Circle()
+                        .fill(draft.enabled ? Color.green : Color.secondary.opacity(0.35))
+                        .frame(width: 8, height: 8)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(draft.name.isEmpty ? L10n.modelPlaceholder(language) : draft.name)
+
+            if isExpanded {
+                Divider()
+                VStack(alignment: .leading, spacing: 10) {
+                SettingsRow(label: L10n.modelName(language)) {
+                    TextField(L10n.modelPlaceholder(language), text: $draft.name).textFieldStyle(.roundedBorder)
+                }
+                SettingsRow(label: L10n.provider(language)) {
+                    Picker("", selection: $draft.provider) {
+                        ForEach(LLMProvider.allCases) { provider in
+                            Text(L10n.providerName(provider, language)).tag(provider)
+                        }
+                    }
+                    .labelsHidden()
+                    .onChange(of: draft.provider) { _, provider in
+                        if draft.baseURL.isEmpty || draft.baseURL == LLMProvider.openAICompatible.defaultBaseURL {
+                            draft.baseURL = provider.defaultBaseURL
+                        }
+                        if draft.model.isEmpty { draft.model = provider.defaultModel }
+                    }
+                }
+                SettingsRow(label: L10n.endpointURL(language)) {
+                    TextField(L10n.urlPlaceholder(language), text: $draft.baseURL).textFieldStyle(.roundedBorder)
+                }
+                SettingsRow(label: L10n.apiKey(language)) {
+                    SecureField("", text: $draft.apiKey).textFieldStyle(.roundedBorder)
+                }
+                SettingsRow(label: L10n.modelID(language)) {
+                    TextField(L10n.modelIDPlaceholder(language), text: $draft.model).textFieldStyle(.roundedBorder)
+                }
+                SettingsRow(label: L10n.thinkingMode(language)) {
+                    Picker("", selection: $draft.thinking) {
+                        ForEach(LLMThinkingMode.allCases) { mode in
+                            Text(thinkingName(mode)).tag(mode)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                }
+                SettingsRow(label: L10n.prompt(language)) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        TextEditor(text: $draft.systemPrompt)
+                            .frame(minHeight: 110)
+                            .overlay(RoundedRectangle(cornerRadius: 5).stroke(Color.secondary.opacity(0.25)))
+                        HStack {
+                            Text(L10n.promptHint(language))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Button(L10n.restoreDefaultPrompt(language)) {
+                                draft.systemPrompt = LLMTranslationPrompt.defaultSystemPrompt
+                            }
+                            .controlSize(.small)
+                        }
+                    }
+                }
+                HStack {
+                    Toggle(L10n.modelEnabled(language), isOn: $draft.enabled).toggleStyle(.checkbox)
+                    Spacer()
+                    Button(L10n.removeModel(language), role: .destructive, action: remove)
+                }
+                }
+                .padding(.top, 2)
+            }
+        }
+        .onChange(of: draft) { _, updated in save(updated) }
+    }
+
+    private func thinkingName(_ mode: LLMThinkingMode) -> String {
+        switch mode {
+        case .automatic: return L10n.thinkingAutomatic(language)
+        case .nonThinking: return L10n.thinkingOff(language)
+        case .thinking: return L10n.thinkingOn(language)
+        }
+    }
+}
+
 struct LanguageResourceRow: View {
     let language: UILanguage
-    let holder: TranslationSessionHolder
+    let sourceLanguage: Language
+    let targetLanguage: Language
 
     private enum PackState {
         case checking, installed, unsupported, available, downloading, failed
@@ -567,6 +875,16 @@ struct LanguageResourceRow: View {
 
     @State private var packState: PackState = .checking
     @State private var progressText = ""
+    @State private var configuration: TranslationSession.Configuration
+    @State private var requested = false
+
+    init(language: UILanguage, sourceLanguage: Language, targetLanguage: Language) {
+        self.language = language
+        self.sourceLanguage = sourceLanguage
+        self.targetLanguage = targetLanguage
+        _configuration = State(
+            initialValue: TranslationSession.Configuration(source: sourceLanguage.locale, target: targetLanguage.locale))
+    }
 
     var body: some View {
         Group {
@@ -575,10 +893,10 @@ struct LanguageResourceRow: View {
                 Text(L10n.languagesChecking(language))
                     .foregroundStyle(.secondary)
             case .installed:
-                Text(L10n.languagesReady(language))
+                Text(L10n.languagesReady(sourceLanguage, targetLanguage, language))
                     .foregroundStyle(.secondary)
             case .unsupported:
-                Text(L10n.languagesUnsupported(language))
+                Text(L10n.languagesUnsupported(sourceLanguage, targetLanguage, language))
                     .foregroundStyle(.secondary)
             case .available:
                 Button(L10n.downloadLanguage(language)) {
@@ -595,18 +913,19 @@ struct LanguageResourceRow: View {
                 }
             }
         }
-        .task { await refreshAvailability() }
-    }
-
-    private func startDownload() {
-        packState = .downloading
-        progressText = L10n.languagesPreparing(language)
-        Task {
+        .task(id: "\(sourceLanguage.rawValue)-\(targetLanguage.rawValue)") {
+            requested = false
+            configuration = TranslationSession.Configuration(source: sourceLanguage.locale, target: targetLanguage.locale)
+            await refreshAvailability()
+        }
+        .translationTask(configuration) { session in
+            guard requested else { return }
             do {
-                try await holder.prepareTranslation()
+                try await session.prepareTranslation()
                 progressText = L10n.languagesDownloading(language)
+                let availability = LanguageAvailability()
                 for _ in 0..<120 {
-                    let state = await holder.languageAvailability()
+                    let state = await availability.status(from: sourceLanguage.locale, to: targetLanguage.locale)
                     if state == .installed {
                         packState = .installed
                         return
@@ -617,7 +936,7 @@ struct LanguageResourceRow: View {
                     }
                     try await Task.sleep(for: .seconds(1))
                 }
-                progressText = L10n.languagesStillDownloading(language)
+                progressText = L10n.languagesStillDownloading(sourceLanguage, targetLanguage, language)
                 packState = .failed
             } catch {
                 progressText = L10n.languagesDownloadFailed(language)
@@ -626,8 +945,15 @@ struct LanguageResourceRow: View {
         }
     }
 
+    private func startDownload() {
+        requested = true
+        packState = .downloading
+        progressText = L10n.languagesPreparing(language)
+        configuration.invalidate()
+    }
+
     private func refreshAvailability() async {
-        let state = await holder.languageAvailability()
+        let state = await LanguageAvailability().status(from: sourceLanguage.locale, to: targetLanguage.locale)
         switch state {
         case .installed: packState = .installed
         case .unsupported: packState = .unsupported
