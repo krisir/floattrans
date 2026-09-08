@@ -15,6 +15,14 @@ final class SentenceExtractorTests: XCTestCase {
         XCTAssertTrue(ChineseTextDetector().containsChinese("Hello，我今天有点忙"))
         XCTAssertFalse(ChineseTextDetector().containsChinese("Hello"))
     }
+
+    func testConfiguredLanguageDetectorSupportsRequestedDirections() {
+        let detector = LanguageTextDetector()
+        XCTAssertTrue(detector.contains("Hello world", language: .english))
+        XCTAssertTrue(detector.contains("Привет, мир", language: .russian))
+        XCTAssertTrue(detector.contains("こんにちは", language: .japanese))
+        XCTAssertFalse(detector.contains("123 !?", language: .english))
+    }
     func testFallbackUsesLastSegmentWithoutCursor() {
         let snapshot = TextSnapshot(pid: 1, bundleIdentifier: nil, text: "第一句。正在输入的内容", selectedRange: nil)
         XCTAssertEqual(SentenceExtractor().extract(from: snapshot), "正在输入的内容")
@@ -185,6 +193,19 @@ final class TranslationCoordinatorTests: XCTestCase {
         let coordinator = TranslationCoordinator(engine: MissingResourceEngine())
         let result = await coordinator.translate("你好")
         XCTAssertNil(result)
+    }
+
+    func testDirectionChangesArePassedToEngine() async {
+        let coordinator = TranslationCoordinator(engine: DirectionEchoEngine())
+        await coordinator.setDirection(from: .english, to: .russian)
+        let translated = await coordinator.translate("Hello")
+        XCTAssertEqual(translated, "en-ru:Hello")
+    }
+}
+
+private struct DirectionEchoEngine: TranslationEngine {
+    func translate(_ text: String, from: Language, to: Language) async throws -> String {
+        "\(from.rawValue)-\(to.rawValue):\(text)"
     }
 }
 

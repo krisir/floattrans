@@ -31,9 +31,10 @@ public struct InputSessionID: Hashable, Sendable {
 
 @MainActor final class InputCoordinator {
     private let logger = Logger(subsystem: "com.liveenglish.app", category: "pipeline")
-    private let extractor = SentenceExtractor(), detector = ChineseTextDetector(), debouncer = InputDebouncer()
+    private let extractor = SentenceExtractor(), detector = LanguageTextDetector(), debouncer = InputDebouncer()
     private var lastSentence = "", session: InputSessionID?
     var isEnabled = true
+    var sourceLanguage: Language = .chinese
     var excludedBundleIDs: Set<String> = []
     var delayMilliseconds: Int {
         get {
@@ -49,6 +50,10 @@ public struct InputSessionID: Hashable, Sendable {
         }
     }
     var onSentence: ((String, String, InputSessionID, NSScreen?, TextSnapshot) -> Void)?, onEmpty: (() -> Void)?
+    func setSourceLanguage(_ language: Language) {
+        sourceLanguage = language
+        reset()
+    }
     func handle(_ snapshot: TextSnapshot, session: InputSessionID, screen: NSScreen?) {
         DiagnosticLog.write(
             "snapshot received bundle=\(snapshot.bundleIdentifier ?? "unknown") length=\(snapshot.text.count)")
@@ -100,11 +105,11 @@ public struct InputSessionID: Hashable, Sendable {
     ) {
         let sentence = extractor.extract(from: snapshot)
         DiagnosticLog.write(
-            "debounce fired sentenceLength=\(sentence.count) hasChinese=\(detector.containsChinese(sentence))")
+            "debounce fired sentenceLength=\(sentence.count) source=\(sourceLanguage.rawValue) matches=\(detector.contains(sentence, language: sourceLanguage))")
         logger.info(
-            "debounce fired sentenceLength=\(sentence.count, privacy: .public) hasChinese=\(self.detector.containsChinese(sentence), privacy: .public)"
+            "debounce fired sentenceLength=\(sentence.count, privacy: .public) source=\(self.sourceLanguage.rawValue, privacy: .public) matches=\(self.detector.contains(sentence, language: self.sourceLanguage), privacy: .public)"
         )
-        guard !sentence.isEmpty, detector.containsChinese(sentence) else { return }
+        guard !sentence.isEmpty, detector.contains(sentence, language: sourceLanguage) else { return }
         if !force, sentence == lastSentence { return }
         lastSentence = sentence
         let nsText = snapshot.text as NSString
@@ -120,6 +125,7 @@ public struct InputSessionID: Hashable, Sendable {
     private let logger = Logger(subsystem: "com.liveenglish.app", category: "accessibility")
     var onSnapshot: ((TextSnapshot, InputSessionID, NSScreen?) -> Void)?
     var excludedBundleIDs: Set<String> = []
+    var sourceLanguage: Language = .chinese
     var onFocusChanged: (() -> Void)?
     private var appObserver: NSObjectProtocol?, elementObserver: AXObserver?, pollTimer: Timer?, focused: AXUIElement?,
         lastText: String?, lastGoodText: String?, lastSelectedRange: NSRange?, session = InputSessionID(pid: 0)
@@ -265,7 +271,8 @@ public struct InputSessionID: Hashable, Sendable {
         let captured = readFocusedText(force: true)
         let live = captured?.snapshot ?? TextSnapshot(
             pid: session.pid, bundleIdentifier: nil, text: "", selectedRange: nil)
-        let resolved = ShortcutSnapshotRecovery.resolve(live: live, lastGoodText: lastGoodText)
+        let resolved = ShortcutSnapshotRecovery.resolve(
+            live: live, lastGoodText: lastGoodText, sourceLanguage: sourceLanguage)
         guard !resolved.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
         return (resolved, captured?.session ?? session, captured?.screen ?? NSScreen.main)
     }

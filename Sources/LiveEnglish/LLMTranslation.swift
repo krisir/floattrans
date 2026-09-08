@@ -1,5 +1,14 @@
 import Foundation
 
+/// The editable starting prompt used for newly added models. The app sends
+/// the selected source/target language and text in a separate user message,
+/// so this prompt stays useful for every translation direction.
+public enum LLMTranslationPrompt {
+    public static let defaultSystemPrompt = """
+        You are a professional translator. Translate faithfully according to the source and target language specified by the user. Preserve the original meaning, tone, terminology, and formatting. Return only the translated text. Do not add explanations, notes, quotation marks, labels, or any other content.
+        """
+}
+
 /// The wire protocol used by a language-model endpoint.
 ///
 /// DeepSeek, GLM and most OpenAI-compatible gateways use the chat-completions
@@ -154,7 +163,7 @@ public struct LLMModelConfiguration: Codable, Equatable, Identifiable, Sendable 
         baseURL: String,
         apiKey: String = "",
         model: String,
-        systemPrompt: String = "",
+        systemPrompt: String = LLMTranslationPrompt.defaultSystemPrompt,
         thinking: LLMThinkingMode = .automatic,
         enabled: Bool = true,
         timeoutSeconds: Double = 8
@@ -180,7 +189,7 @@ public struct LLMModelConfiguration: Codable, Equatable, Identifiable, Sendable 
         baseURL: String,
         apiKey: String = "",
         model: String,
-        systemPrompt: String = "",
+        systemPrompt: String = LLMTranslationPrompt.defaultSystemPrompt,
         thinking: Bool,
         enabled: Bool = true,
         timeoutSeconds: Double = 8
@@ -207,7 +216,7 @@ public struct LLMModelConfiguration: Codable, Equatable, Identifiable, Sendable 
         baseURL: URL,
         apiKey: String = "",
         model: String,
-        systemPrompt: String = "",
+        systemPrompt: String = LLMTranslationPrompt.defaultSystemPrompt,
         thinking: LLMThinkingMode = .automatic,
         enabled: Bool = true,
         timeoutSeconds: Double = 8
@@ -631,7 +640,7 @@ private extension LLMModelRouter {
         let prompt = translationPrompt(text: text, source: source, target: target)
         let system = configuration.systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
         let messages = [
-            ChatMessage(role: "system", content: system.isEmpty ? defaultSystemPrompt : system),
+            ChatMessage(role: "system", content: system.isEmpty ? LLMTranslationPrompt.defaultSystemPrompt : system),
             ChatMessage(role: "user", content: prompt),
         ]
         let effort: String?
@@ -663,7 +672,7 @@ private extension LLMModelRouter {
             ClaudeRequest(
                 model: configuration.model,
                 max_tokens: 2048,
-                system: system.isEmpty ? defaultSystemPrompt : system,
+                system: system.isEmpty ? LLMTranslationPrompt.defaultSystemPrompt : system,
                 messages: [ChatMessage(role: "user", content: prompt)],
                 thinking: thinking))
     }
@@ -701,9 +710,6 @@ private extension LLMModelRouter {
         else { return nil }
         return String(body.prefix(500))
     }
-
-    static let defaultSystemPrompt =
-        "You are a professional translator. Preserve the meaning, tone, and formatting. Return only the translation, with no explanation."
 
     static func translationPrompt(text: String, source: Language, target: Language) -> String {
         "Translate the following text from \(languageName(source)) to \(languageName(target)). Return only the translated text.\n\n\(text)"
