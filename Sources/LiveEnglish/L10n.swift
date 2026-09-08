@@ -44,6 +44,9 @@ enum L10n {
     static func tabOverlay(_ lang: UILanguage) -> String {
         lang == .chinese ? "悬浮窗" : "Overlay"
     }
+    static func tabHistory(_ lang: UILanguage) -> String {
+        lang == .chinese ? "历史记录" : "History"
+    }
     static func tabPrivacy(_ lang: UILanguage) -> String {
         lang == .chinese ? "隐私" : "Privacy"
     }
@@ -172,6 +175,33 @@ enum L10n {
     static func timingShortcut(_ lang: UILanguage) -> String {
         lang == .chinese ? "快捷键触发翻译" : "On Shortcut"
     }
+    static func historyRetention(_ lang: UILanguage) -> String {
+        lang == .chinese ? "保存期限" : "Retention"
+    }
+    static func historyRetentionName(_ value: HistoryRetention, _ lang: UILanguage) -> String {
+        switch value {
+        case .oneDay: return lang == .chinese ? "1 天" : "1 Day"
+        case .sevenDays: return lang == .chinese ? "7 天" : "7 Days"
+        case .thirtyDays: return lang == .chinese ? "30 天" : "30 Days"
+        case .sixMonths: return lang == .chinese ? "6 个月" : "6 Months"
+        case .forever: return lang == .chinese ? "永久" : "Forever"
+        }
+    }
+    static func historyOriginal(_ lang: UILanguage) -> String { lang == .chinese ? "原文" : "Original" }
+    static func historyTranslation(_ lang: UILanguage) -> String { lang == .chinese ? "译文" : "Translation" }
+    static func historyIndex(_ lang: UILanguage) -> String { lang == .chinese ? "序号" : "No." }
+    static func historyExport(_ lang: UILanguage) -> String { lang == .chinese ? "导出历史记录" : "Export History" }
+    static func historyExportMarkdown(_ lang: UILanguage) -> String { lang == .chinese ? "导出 Markdown" : "Export Markdown" }
+    static func historyExportExcel(_ lang: UILanguage) -> String { lang == .chinese ? "导出 Excel" : "Export Excel" }
+    static func historyExportTitle(_ lang: UILanguage) -> String {
+        lang == .chinese ? "浮译历史记录" : "FloatTrans Translation History"
+    }
+    static func historyEmpty(_ lang: UILanguage) -> String {
+        lang == .chinese ? "暂时没有已完成的翻译记录。" : "No completed translations yet."
+    }
+    static func historyStorageHint(_ lang: UILanguage) -> String {
+        lang == .chinese ? "历史记录仅保存在这台 Mac 上。" : "History is stored only on this Mac."
+    }
     static func translateShortcut(_ lang: UILanguage) -> String {
         lang == .chinese ? "翻译快捷键" : "Translate Shortcut"
     }
@@ -254,10 +284,40 @@ enum L10n {
     static func readTranslationsAloud(_ lang: UILanguage) -> String {
         lang == .chinese ? "朗读翻译结果" : "Read Translations Aloud"
     }
-    static func autoSpeakTimingHint(_ lang: UILanguage) -> String {
-        lang == .chinese
-            ? "超时翻译时不会朗读。请改用完整句子翻译或快捷键触发翻译。"
-            : "On Pause does not speak. Use Complete Sentence or On Shortcut to hear translations."
+    static func speechTimingAll(_ lang: UILanguage) -> String {
+        lang == .chinese ? "全部时机" : "All Translation Events"
+    }
+    static func speechTimingNone(_ lang: UILanguage) -> String {
+        lang == .chinese ? "不朗读" : "Never"
+    }
+    static func speechTimingPause(_ lang: UILanguage) -> String {
+        lang == .chinese ? "超时翻译" : "On Pause"
+    }
+    static func speechTimingCompleteSentence(_ lang: UILanguage) -> String {
+        lang == .chinese ? "完整句子翻译" : "Complete Sentence"
+    }
+    static func speechTimingShortcut(_ lang: UILanguage) -> String {
+        lang == .chinese ? "快捷键触发翻译" : "On Shortcut"
+    }
+    static func speechTimingSummary(_ selection: SpeechTriggerSelection, _ lang: UILanguage) -> String {
+        if selection.isEmpty { return speechTimingNone(lang) }
+        if selection == .all { return speechTimingAll(lang) }
+        return SpeechTrigger.allCases.compactMap { trigger in
+            let triggerSelection = SpeechTriggerSelection(rawValue: trigger.rawValue)
+            guard selection.contains(triggerSelection) else { return nil }
+            switch trigger {
+            case .pause: return speechTimingPause(lang)
+            case .completeSentence: return speechTimingCompleteSentence(lang)
+            case .shortcut: return speechTimingShortcut(lang)
+            }
+        }
+        .joined(separator: lang == .chinese ? "、" : ", ")
+    }
+    static func speechVoiceHint(_ target: Language, _ lang: UILanguage) -> String {
+        let languageName = lang == .chinese ? target.chineseName : target.englishName
+        return lang == .chinese
+            ? "朗读会使用此 Mac 上\(languageName)的默认系统语音。"
+            : "Speech uses this Mac’s default \(languageName) system voice."
     }
 
     static func groupPosition(_ lang: UILanguage) -> String {

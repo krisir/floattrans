@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 @preconcurrency import Translation
 
 struct SettingsRow<Content: View>: View {
@@ -40,6 +41,22 @@ struct SettingsGroupHeader: View {
             .font(.subheadline.weight(.semibold))
             .foregroundStyle(.secondary)
             .padding(.top, 4)
+    }
+}
+
+/// Gives the full-width settings navigation cells a restrained pressed state
+/// without restoring macOS's prominent keyboard focus outline.
+private struct SettingsTabButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity)
+            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .background {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(configuration.isPressed ? Color.accentColor.opacity(0.16) : Color.clear)
+            }
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
 
@@ -102,13 +119,14 @@ struct OverlayPositionThumbnail: View {
 
 struct SettingsView: View {
     private enum Page: CaseIterable {
-        case general, translation, overlay, privacy, about
+        case general, translation, overlay, history, privacy, about
 
         var systemImage: String {
             switch self {
             case .general: return "gearshape"
             case .translation: return "character.bubble"
             case .overlay: return "rectangle.on.rectangle"
+            case .history: return "clock"
             case .privacy: return "lock"
             case .about: return "info.circle"
             }
@@ -119,6 +137,7 @@ struct SettingsView: View {
             case .general: return L10n.tabGeneral(lang)
             case .translation: return L10n.tabTranslation(lang)
             case .overlay: return L10n.tabOverlay(lang)
+            case .history: return L10n.tabHistory(lang)
             case .privacy: return L10n.tabPrivacy(lang)
             case .about: return L10n.tabAbout(lang)
             }
@@ -127,12 +146,15 @@ struct SettingsView: View {
 
     @ObservedObject var state: AppState
     @ObservedObject private var settings: SettingsStore
+    @ObservedObject private var history: TranslationHistoryController
     @State private var selectedPage: Page = .general
     @State private var draggedModelID: UUID?
+    @State private var historyExportMessage: String?
 
     init(state: AppState) {
         self.state = state
         self._settings = ObservedObject(wrappedValue: state.settings)
+        self._history = ObservedObject(wrappedValue: state.history)
     }
 
     private var lang: UILanguage { settings.uiLanguage }
@@ -143,19 +165,19 @@ struct SettingsView: View {
             Divider()
             pageContent
         }
-        .frame(minWidth: 680, idealWidth: 760, minHeight: 520, idealHeight: 700)
+        .frame(minWidth: 760, idealWidth: 840, minHeight: 520, idealHeight: 700)
         .onAppear { state.updateSettingsWindowTitle() }
         .onChange(of: settings.uiLanguage) { _, _ in state.updateSettingsWindowTitle() }
     }
 
     private var tabBar: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 6) {
             ForEach(Page.allCases, id: \.self) { page in
                 tabButton(page)
             }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 6)
     }
 
     private func tabButton(_ page: Page) -> some View {
@@ -163,21 +185,25 @@ struct SettingsView: View {
         return Button {
             selectedPage = page
         } label: {
-            Label(page.title(lang), systemImage: page.systemImage)
-                .labelStyle(.titleAndIcon)
-                .font(.system(size: 11, weight: selected ? .semibold : .regular))
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
-                .foregroundStyle(selected ? Color.accentColor : Color.secondary)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 6)
-                .background {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(selected ? Color.accentColor.opacity(0.12) : Color.clear)
+            HStack(spacing: 6) {
+                if page == .history {
+                    Image("HistoryIcon")
+                        .renderingMode(.template)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 14, height: 14)
+                } else {
+                    Image(systemName: page.systemImage)
                 }
+                Text(page.title(lang))
+            }
+            .frame(maxWidth: .infinity)
+                .font(.system(size: 12, weight: selected ? .semibold : .regular))
+                .lineLimit(1)
+                .foregroundStyle(selected ? Color.accentColor : Color.secondary)
         }
-        .buttonStyle(.plain)
-        .controlSize(.small)
+        .buttonStyle(SettingsTabButtonStyle())
+        .focusEffectDisabled()
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
@@ -188,6 +214,7 @@ struct SettingsView: View {
             case .general: generalPage
             case .translation: translationPage
             case .overlay: overlayPage
+            case .history: historyPage
             case .privacy: privacyPage
             case .about: aboutPage
             }
@@ -373,24 +400,61 @@ struct SettingsView: View {
                 .padding(.leading, 184)
             SettingsGroupHeader(title: L10n.groupSpeech(lang))
             SettingsRow(label: L10n.readTranslationsAloud(lang)) {
-                Toggle(
-                    "",
-                    isOn: Binding(
-                        get: { settings.speechEnabled },
-                        set: {
-                            settings.speechEnabled = $0
-                            if !$0 { state.speech.stop() }
-                        })
-                )
-                .labelsHidden()
-                .toggleStyle(.switch)
+                Menu {
+                    Toggle(L10n.speechTimingAll(lang), isOn: allSpeechTriggersBinding)
+                    Divider()
+                    ForEach(SpeechTrigger.allCases) { trigger in
+                        Toggle(speechTriggerName(trigger), isOn: speechTriggerBinding(trigger))
+                    }
+                } label: {
+                    HStack(spacing: 8) {
+                        Text(L10n.speechTimingSummary(settings.speechTriggers, lang))
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(minWidth: 250, alignment: .leading)
+                }
+                .menuStyle(.borderedButton)
             }
-            if settings.speechEnabled, settings.translationTiming == .pause {
-                Text(L10n.autoSpeakTimingHint(lang))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.leading, 184)
-            }
+            Text(L10n.speechVoiceHint(settings.targetLanguage, lang))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.leading, 184)
+        }
+    }
+
+    private var allSpeechTriggersBinding: Binding<Bool> {
+        Binding(
+            get: { settings.speechTriggers == .all },
+            set: { setSpeechTriggers($0 ? .all : []) })
+    }
+
+    private func speechTriggerBinding(_ trigger: SpeechTrigger) -> Binding<Bool> {
+        let selection = SpeechTriggerSelection(rawValue: trigger.rawValue)
+        return Binding(
+            get: { settings.speechTriggers.contains(selection) },
+            set: { enabled in
+                var updated = settings.speechTriggers
+                if enabled {
+                    updated.insert(selection)
+                } else {
+                    updated.remove(selection)
+                }
+                setSpeechTriggers(updated)
+            })
+    }
+
+    private func setSpeechTriggers(_ triggers: SpeechTriggerSelection) {
+        settings.speechTriggers = triggers
+        if triggers.isEmpty { state.speech.stop() }
+    }
+
+    private func speechTriggerName(_ trigger: SpeechTrigger) -> String {
+        switch trigger {
+        case .pause: return L10n.speechTimingPause(lang)
+        case .completeSentence: return L10n.speechTimingCompleteSentence(lang)
+        case .shortcut: return L10n.speechTimingShortcut(lang)
         }
     }
 
@@ -583,6 +647,126 @@ struct SettingsView: View {
         }
     }
 
+    private var historyPage: some View {
+        settingsPage(title: L10n.tabHistory(lang)) {
+            SettingsRow(label: L10n.historyRetention(lang)) {
+                Picker(
+                    "",
+                    selection: Binding(
+                        get: { settings.historyRetention },
+                        set: { settings.historyRetention = $0 })) {
+                    ForEach(HistoryRetention.allCases) { retention in
+                        Text(L10n.historyRetentionName(retention, lang)).tag(retention)
+                    }
+                }
+                .labelsHidden()
+                .frame(width: 160)
+            }
+            HStack {
+                Text(L10n.historyStorageHint(lang))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Menu {
+                    Button(L10n.historyExportMarkdown(lang)) { exportHistory(.markdown) }
+                    Button(L10n.historyExportExcel(lang)) { exportHistory(.excel) }
+                } label: {
+                    Label(L10n.historyExport(lang), systemImage: "square.and.arrow.up")
+                }
+            }
+
+            if let historyExportMessage {
+                Text(historyExportMessage)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            if let errorMessage = history.errorMessage {
+                Text(errorMessage)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            } else if history.entries.isEmpty {
+                Text(L10n.historyEmpty(lang))
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 12)
+            } else {
+                historyTable
+            }
+        }
+        .task { history.reload(retention: settings.historyRetention) }
+    }
+
+    private var historyTable: some View {
+        LazyVStack(alignment: .leading, spacing: 12) {
+            ForEach(historyDayGroups) { group in
+                Text(historyDayString(group.day))
+                    .font(.subheadline.weight(.semibold))
+                    .padding(.top, 4)
+                HStack(alignment: .top, spacing: 12) {
+                    Text(L10n.historyIndex(lang)).frame(width: 42, alignment: .trailing)
+                    Text(L10n.historyOriginal(lang)).frame(maxWidth: .infinity, alignment: .leading)
+                    Text(L10n.historyTranslation(lang)).frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+                ForEach(Array(group.entries.enumerated()), id: \.element.id) { index, entry in
+                    HStack(alignment: .top, spacing: 12) {
+                        Text("\(index + 1)")
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                            .frame(width: 42, alignment: .trailing)
+                        Text(entry.sourceText)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Text(entry.translatedText)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .font(.callout)
+                    Divider()
+                }
+            }
+        }
+    }
+
+    private var historyDayGroups: [HistoryDayGroup] {
+        let calendar = Calendar.current
+        var groups: [HistoryDayGroup] = []
+        for entry in history.entries {
+            let day = calendar.startOfDay(for: entry.createdAt)
+            if let last = groups.indices.last, calendar.isDate(groups[last].day, inSameDayAs: day) {
+                groups[last].entries.append(entry)
+            } else {
+                groups.append(HistoryDayGroup(day: day, entries: [entry]))
+            }
+        }
+        return groups
+    }
+
+    private func historyDayString(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.timeZone = .current
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: date)
+    }
+
+    private func exportHistory(_ format: HistoryExportFormat) {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "FloatTrans-history.\(format.fileExtension)"
+        panel.allowedContentTypes = [UTType(filenameExtension: format.fileExtension) ?? .data]
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            do {
+                try TranslationHistoryExporter.export(history.entries, format: format, language: lang, to: url)
+                historyExportMessage = url.lastPathComponent
+            } catch {
+                historyExportMessage = error.localizedDescription
+            }
+        }
+    }
+
     private var aboutPage: some View {
         settingsPage(title: L10n.tabAbout(lang)) {
             AboutView(language: lang)
@@ -610,6 +794,12 @@ struct SettingsView: View {
         .background(Color(nsColor: .windowBackgroundColor).opacity(0.72))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
+}
+
+private struct HistoryDayGroup: Identifiable {
+    let day: Date
+    var entries: [TranslationHistoryEntry]
+    var id: Date { day }
 }
 
 struct ExcludedAppRow: View {
