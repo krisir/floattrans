@@ -2,12 +2,12 @@
 
 [项目主页](https://krisir.github.io/floattrans/) · [GitHub](https://github.com/krisir/floattrans)
 
-FloatTrans 是一款 macOS 菜单栏实时中译英工具。它读取当前应用中支持 Accessibility 的文本输入框，将中文句子翻译成英文，并以低打扰的浮动框显示结果。
+FloatTrans 是一款 macOS 菜单栏实时翻译工具。它读取当前应用中支持 Accessibility 的文本输入框，按用户选择的源语言和目标语言翻译，并以低打扰的浮动框显示结果。
 
 ## 功能
 
 - 实时监听支持 macOS Accessibility 的文本输入框
-- 按句子识别，支持中文及中英文标点
+- 按句子识别，支持中文、英语、日语、俄语、韩语、法语、德语和西班牙语方向
 - 同一句动态更新，新句子显示新的浮动框
 - 浮动框自动换行并动态调整高度
 - 最多同时保留 3 个浮动框，每个都可手动关闭
@@ -23,7 +23,7 @@ FloatTrans 是一款 macOS 菜单栏实时中译英工具。它读取当前应�
 - macOS 26 或更高版本
 - Swift 6 / Xcode 26
 - Accessibility 权限
-- macOS 中文 → 英文 Translation 语言包
+- macOS Translation 语言包（按所选语言对下载）
 
 ## 构建和运行
 
@@ -69,14 +69,15 @@ zsh Scripts/build-dmg.sh
 1. 启动 FloatTrans。
 2. 在引导页打开 Accessibility 设置。
 3. 在“系统设置 → 隐私与安全性 → 辅助功能”中开启 FloatTrans。
-4. 在设置页安装中文 → 英文语言包并等待下载完成。
+4. 在设置页选择本地翻译并安装所需语言对；若使用大语言模型，请填写 API URL、密钥和模型 ID。
 5. 在 TextEdit、浏览器、企业微信等支持 Accessibility 的文本框中输入中文。
 6. 停止输入片刻后，英文翻译会显示在浮动框中。
 
 ## 设置
 
 - General：启用翻译、登录时启动、Accessibility 状态
-- Translation：源语言、目标语言和翻译速度
+- Translation：本地/大模型翻译方式、源语言、目标语言和翻译速度
+- Translation：可添加多个大语言模型 API，拖动调整优先级，并设置超时自动切换
 - Overlay：位置、显示行为、字号、屏幕边距、隐藏时间和预览
 - Privacy：添加或移除排除翻译的应用
 
@@ -94,7 +95,9 @@ tail -f /tmp/liveenglish-debug.log
 
 ## 翻译实现
 
-macOS 26+ 使用系统 `Translation` Framework 和本地语言模型。语言包未安装、下载未完成或系统不支持该语言对时，翻译不会返回结果。低版本系统使用 Demo fallback，主要用于开发测试。
+macOS 26+ 使用系统 `Translation` Framework 和本地语言模型，源语言和目标语言由设置页动态选择。语言包未安装时，设置页会显示下载按钮；下载未完成或系统不支持该语言对时会给出状态提示。低版本系统使用 Demo fallback，主要用于开发测试。
+
+也可以在翻译设置中切换到大语言模型 API。每个模型包含服务商、URL、API 密钥、模型 ID、自定义系统提示词和思考模式；模型按照列表顺序调用，超过全局超时或请求失败会自动尝试下一项。API 密钥保存在 macOS 钥匙串中，模型排序和其他非敏感配置保存在 UserDefaults。
 
 ## 项目结构
 
@@ -103,6 +106,8 @@ Sources/LiveEnglish/
 ├── App.swift          应用入口、菜单栏和设置界面
 ├── Input.swift        Accessibility 监听、文本读取和防抖
 ├── Models.swift       句子提取、翻译协议和协调器
+├── LLMTranslation.swift 大模型协议、请求和故障转移
+├── KeychainStore.swift API 密钥钥匙串存储
 ├── Overlay.swift      浮动框和显示策略
 ├── Settings.swift     设置模型和持久化
 └── Diagnostics.swift  本地调试日志

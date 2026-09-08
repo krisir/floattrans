@@ -52,6 +52,8 @@ struct MenuBarMenu: View {
     let permission = AccessibilityPermissionManager()
     let monitor = AccessibilityMonitor()
     let input = InputCoordinator()
+    let llmRouter: LLMModelRouter
+    let translationService: TranslationService
     let coordinator: TranslationCoordinator
     let overlay = OverlayCoordinator()
     private var currentSession: InputSessionID?
@@ -63,16 +65,35 @@ struct MenuBarMenu: View {
         let enabledValue = store.enabled
         let trustedValue = AXIsProcessTrusted()
         let welcomeValue = !UserDefaults.standard.bool(forKey: "onboardingComplete")
+        let localEngine = Self.makeEngine()
+        let llmRouterValue = LLMModelRouter(
+            models: store.llmModels.map { model in
+                var model = model
+                model.timeoutSeconds = store.llmFallbackTimeout
+                return model
+            }, timeoutSeconds: store.llmFallbackTimeout)
+        let translationServiceValue = TranslationService(
+            localEngine: localEngine,
+            llmRouter: llmRouterValue,
+            backend: store.translationBackend,
+            models: store.llmModels,
+            timeoutSeconds: store.llmFallbackTimeout)
         settings = store
         enabled = enabledValue
         permissionGranted = trustedValue
         showWelcome = welcomeValue
-        coordinator = TranslationCoordinator(engine: Self.makeEngine())
+        llmRouter = llmRouterValue
+        translationService = translationServiceValue
+        coordinator = TranslationCoordinator(
+            engine: translationServiceValue,
+            sourceLanguage: store.sourceLanguage,
+            targetLanguage: store.targetLanguage)
         NSLog("LiveEnglish startup trusted=%@ enabled=%@", String(trustedValue), String(enabledValue))
         DiagnosticLog.write("startup trusted=\(trustedValue) enabled=\(enabledValue)")
         logger.info("startup trusted=\(trustedValue, privacy: .public) enabled=\(enabledValue, privacy: .public)")
         input.isEnabled = enabled
         input.delayMilliseconds = settings.translationSpeed
+        input.sourceLanguage = settings.sourceLanguage
         overlay.hideAfter = settings.hideAfter
         overlay.neverHide = settings.neverHide
         overlay.textSize = settings.textSize
@@ -85,6 +106,9 @@ struct MenuBarMenu: View {
         monitor.onFocusChanged = { [weak self] in self?.input.reset() }
         input.excludedBundleIDs = settings.excludedBundleIDs
         monitor.excludedBundleIDs = settings.excludedBundleIDs
+        settings.onTranslationSettingsChanged = { [weak self] in
+            self?.applyTranslationSettings()
+        }
         input.onSentence = { [weak self] text, sentenceKey, session, screen in
             self?.translate(text, sentenceKey: sentenceKey, session: session, screen: screen)
         }
@@ -117,10 +141,42 @@ struct MenuBarMenu: View {
                 self?.presentWelcome()
             }
         }
+        // Ensure the freshly created router uses the exact persisted snapshot
+        // before Accessibility callbacks can enqueue the first translation.
+        applyTranslationSettings()
     }
     private static func makeEngine() -> any TranslationEngine {
         if #available(macOS 26.0, *) { return AppleTranslationEngine() }
         return DemoTranslationEngine()
+    }
+
+    /// Propagates direction, backend, model order, and timeout changes to the
+    /// live pipeline. SettingsStore invokes this on every relevant edit, so no
+    /// restart is needed. Pending requests and overlays are invalidated first
+    /// to prevent output generated with an old prompt/model from appearing.
+    func applyTranslationSettings() {
+        let source = settings.sourceLanguage
+        let target = settings.targetLanguage
+        let backend = settings.translationBackend
+        let timeout = settings.llmFallbackTimeout
+        let models = settings.llmModels.map { model in
+            var model = model
+            // The UI exposes one global fail-over threshold. Supplying it on
+            // every runtime entry keeps the behavior deterministic even when a
+            // model was decoded from an older config with its own timeout.
+            model.timeoutSeconds = timeout
+            return model
+        }
+        input.setSourceLanguage(source)
+        currentSession = nil
+        overlay.hide()
+        Task { [weak self] in
+            guard let self else { return }
+            await coordinator.cancel()
+            await coordinator.setDirection(from: source, to: target)
+            await translationService.configure(backend: backend, models: models, timeoutSeconds: timeout)
+            await coordinator.clearCache()
+        }
     }
     func toggle() {
         enabled.toggle()

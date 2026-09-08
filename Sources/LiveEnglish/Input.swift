@@ -31,8 +31,26 @@ public struct InputSessionID: Hashable, Sendable {
 
 @MainActor final class InputCoordinator {
     private let logger = Logger(subsystem: "com.liveenglish.app", category: "pipeline")
-    private let extractor = SentenceExtractor(), detector = ChineseTextDetector(), debouncer = InputDebouncer()
+    private let extractor = SentenceExtractor(), detector = LanguageTextDetector(), debouncer = InputDebouncer()
     private var lastSentence = "", session: InputSessionID?
+
+    /// Source language selected in settings. Chinese remains the default for
+    /// existing installations, while the detector now accepts all languages
+    /// exposed by `Language`.
+    var sourceLanguage: Language = .chinese {
+        didSet {
+            guard sourceLanguage != oldValue else { return }
+            // Do not let a pending debounce for the previous language emit a
+            // sentence after the user changes direction.
+            debouncer.cancel()
+            lastSentence = ""
+        }
+    }
+
+    func setSourceLanguage(_ language: Language) {
+        sourceLanguage = language
+    }
+
     var isEnabled = true
     var excludedBundleIDs: Set<String> = []
     var delayMilliseconds: Int {
@@ -57,6 +75,7 @@ public struct InputSessionID: Hashable, Sendable {
             return
         }
         self.session = session
+        let configuredLanguage = sourceLanguage
         if snapshot.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             debouncer.cancel()
             lastSentence = ""
@@ -66,12 +85,17 @@ public struct InputSessionID: Hashable, Sendable {
         debouncer.submit(snapshot) { [weak self] snapshot in
             guard let self, self.session == session else { return }
             let sentence = self.extractor.extract(from: snapshot)
+            let matchesSourceLanguage = self.detector.contains(sentence, language: configuredLanguage)
             DiagnosticLog.write(
-                "debounce fired sentenceLength=\(sentence.count) hasChinese=\(self.detector.containsChinese(sentence))")
+                "debounce fired sentenceLength=\(sentence.count) sourceLanguage=\(configuredLanguage.rawValue) matchesSource=\(matchesSourceLanguage)")
             self.logger.info(
-                "debounce fired sentenceLength=\(sentence.count, privacy: .public) hasChinese=\(self.detector.containsChinese(sentence), privacy: .public)"
+                "debounce fired sentenceLength=\(sentence.count, privacy: .public) sourceLanguage=\(configuredLanguage.rawValue, privacy: .public) matchesSource=\(matchesSourceLanguage, privacy: .public)"
             )
-            guard !sentence.isEmpty, self.detector.containsChinese(sentence), sentence != self.lastSentence else {
+            guard self.sourceLanguage == configuredLanguage,
+                !sentence.isEmpty,
+                matchesSourceLanguage,
+                sentence != self.lastSentence
+            else {
                 return
             }
             self.lastSentence = sentence

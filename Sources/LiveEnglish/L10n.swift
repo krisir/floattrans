@@ -73,11 +73,121 @@ enum L10n {
         lang == .chinese ? "打开系统设置" : "Open System Settings"
     }
 
+    static func translationBackend(_ lang: UILanguage) -> String {
+        lang == .chinese ? "翻译方式" : "Translation Engine"
+    }
+    static func backendLocal(_ lang: UILanguage) -> String {
+        lang == .chinese ? "macOS 本地翻译" : "macOS On-device"
+    }
+    static func backendLanguageModel(_ lang: UILanguage) -> String {
+        lang == .chinese ? "大语言模型 API" : "Language Model API"
+    }
+    static func sourceLanguage(_ lang: UILanguage) -> String {
+        lang == .chinese ? "源语言" : "Source Language"
+    }
+    static func targetLanguage(_ lang: UILanguage) -> String {
+        lang == .chinese ? "目标语言" : "Target Language"
+    }
+    static func languagePair(_ source: Language, _ target: Language, _ lang: UILanguage) -> String {
+        let sourceName = lang == .chinese ? source.chineseName : source.englishName
+        let targetName = lang == .chinese ? target.chineseName : target.englishName
+        return "\(sourceName) → \(targetName)"
+    }
+    static func modelSettings(_ lang: UILanguage) -> String {
+        lang == .chinese ? "大语言模型" : "Language Models"
+    }
+    static func modelSettingsHint(_ lang: UILanguage) -> String {
+        lang == .chinese
+            ? "按顺序尝试已启用的模型。当前模型超时或失败时自动切换到下一项。"
+            : "Enabled models are tried in order. A timeout or failure advances to the next model."
+    }
+    static func addModel(_ lang: UILanguage) -> String {
+        lang == .chinese ? "添加模型" : "Add Model"
+    }
+    static func removeModel(_ lang: UILanguage) -> String {
+        lang == .chinese ? "删除模型" : "Remove Model"
+    }
+    static func modelName(_ lang: UILanguage) -> String {
+        lang == .chinese ? "名称" : "Name"
+    }
+    static func provider(_ lang: UILanguage) -> String {
+        lang == .chinese ? "服务商" : "Provider"
+    }
+    static func providerName(_ provider: LLMProvider, _ lang: UILanguage) -> String {
+        switch provider {
+        case .openAICompatible: return lang == .chinese ? "OpenAI 兼容" : "OpenAI compatible"
+        case .anthropic: return lang == .chinese ? "Claude（Anthropic）" : "Claude (Anthropic)"
+        case .deepSeek: return "DeepSeek"
+        case .glm: return lang == .chinese ? "GLM（智谱）" : "GLM (Zhipu)"
+        case .custom: return lang == .chinese ? "自定义" : "Custom"
+        }
+    }
+    static func endpointURL(_ lang: UILanguage) -> String {
+        lang == .chinese ? "API URL" : "API URL"
+    }
+    static func apiKey(_ lang: UILanguage) -> String {
+        lang == .chinese ? "API 密钥" : "API Key"
+    }
+    static func modelID(_ lang: UILanguage) -> String {
+        lang == .chinese ? "模型名称" : "Model ID"
+    }
+    static func prompt(_ lang: UILanguage) -> String {
+        lang == .chinese ? "提示词" : "Prompt"
+    }
+    static func thinkingMode(_ lang: UILanguage) -> String {
+        lang == .chinese ? "思考模式" : "Reasoning Mode"
+    }
+    static func thinkingAutomatic(_ lang: UILanguage) -> String {
+        lang == .chinese ? "自动" : "Automatic"
+    }
+    static func thinkingOff(_ lang: UILanguage) -> String {
+        lang == .chinese ? "非思考" : "Non-thinking"
+    }
+    static func thinkingOn(_ lang: UILanguage) -> String {
+        lang == .chinese ? "思考" : "Thinking"
+    }
+    static func failoverTimeout(_ lang: UILanguage) -> String {
+        lang == .chinese ? "切换超时" : "Fail-over Timeout"
+    }
+    static func timeoutSeconds(_ lang: UILanguage, _ value: Int) -> String {
+        lang == .chinese ? "超过 (value) 秒切换" : "Switch after (value) sec"
+    }
+    static func apiKeyKeychainHint(_ lang: UILanguage) -> String {
+        lang == .chinese ? "密钥保存在此 Mac 的钥匙串中。" : "Keys are stored in this Mac's Keychain."
+    }
+    static func modelPlaceholder(_ lang: UILanguage) -> String {
+        lang == .chinese ? "例如：DeepSeek 主模型" : "For example: Primary DeepSeek"
+    }
+    static func urlPlaceholder(_ lang: UILanguage) -> String {
+        lang == .chinese ? "https://api.example.com/v1" : "https://api.example.com/v1"
+    }
+    static func modelIDPlaceholder(_ lang: UILanguage) -> String {
+        lang == .chinese ? "例如：deepseek-chat" : "For example: deepseek-chat"
+    }
+    static func promptPlaceholder(_ lang: UILanguage) -> String {
+        lang == .chinese ? "留空使用默认翻译提示词" : "Leave empty to use the default translation prompt"
+    }
+    static func noModels(_ lang: UILanguage) -> String {
+        lang == .chinese ? "还没有配置模型。" : "No models configured."
+    }
+    static func modelEnabled(_ lang: UILanguage) -> String {
+        lang == .chinese ? "启用" : "Enabled"
+    }
+    static func localTranslationPrivacy(_ lang: UILanguage) -> String {
+        lang == .chinese ? "本地翻译不会把输入内容发送到网络。" : "On-device translation does not send typed text over the network."
+    }
+    static func llmTranslationPrivacy(_ lang: UILanguage) -> String {
+        lang == .chinese ? "大模型模式会把输入内容发送到所选 API 服务商。" : "Language-model mode sends typed text to the selected API provider."
+    }
+
     static func translationDirection(_ lang: UILanguage) -> String {
         lang == .chinese ? "翻译方向" : "Direction"
     }
     static func translationDirectionValue(_ lang: UILanguage) -> String {
         lang == .chinese ? "中文 → 英文" : "Chinese → English"
+    }
+    static func translationDirectionValue(_ source: Language, _ target: Language, _ lang: UILanguage) -> String {
+        languagePair(source, target, lang)
     }
     static func translationSpeed(_ lang: UILanguage) -> String {
         lang == .chinese ? "翻译速度" : "Translation Speed"
@@ -117,6 +227,19 @@ enum L10n {
     }
     static func languagesDownloadFailed(_ lang: UILanguage) -> String {
         lang == .chinese ? "语言下载未完成。" : "Language download was not completed."
+    }
+    static func languagesReady(_ source: Language, _ target: Language, _ lang: UILanguage) -> String {
+        "\(languagePair(source, target, lang)) · " + (lang == .chinese ? "已就绪 ✓" : "Ready ✓")
+    }
+    static func languagesUnsupported(_ source: Language, _ target: Language, _ lang: UILanguage) -> String {
+        lang == .chinese
+            ? "此 Mac 不支持\(languagePair(source, target, lang))"
+            : "\(languagePair(source, target, lang)) is not supported on this Mac"
+    }
+    static func languagesStillDownloading(_ source: Language, _ target: Language, _ lang: UILanguage) -> String {
+        lang == .chinese
+            ? "\(languagePair(source, target, lang)) 下载仍在进行，请稍后在系统设置中查看。"
+            : "Download for \(languagePair(source, target, lang)) is still in progress. Check Language & Region."
     }
 
     static func groupPosition(_ lang: UILanguage) -> String {
