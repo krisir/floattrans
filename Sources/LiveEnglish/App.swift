@@ -40,6 +40,9 @@ struct MenuBarMenu: View {
         state = AppState()
         super.init()
     }
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        state.startTranslationHost()
+    }
 }
 
 @MainActor final class AppState: ObservableObject {
@@ -53,14 +56,17 @@ struct MenuBarMenu: View {
     let monitor = AccessibilityMonitor()
     let input = InputCoordinator()
     let coordinator: TranslationCoordinator
+    let translationHolder = TranslationSessionHolder()
     let overlay = OverlayCoordinator()
     let speech: SpeechPerforming
-    let audioContextDetector: AudioContextDetecting
     private let speechPolicy = SpeechPolicyEvaluator()
+    private let hotKey = GlobalHotKey.shared
     private var currentSession: InputSessionID?
+    private var pendingAction: PendingTranslationAction?
     private var welcomeWindow: NSWindow?
     private var settingsWindow: NSWindow?
     private var permissionPoll: Task<Void, Never>?
+    private var translationHostWindow: TranslationHostWindowController?
     init() {
         let store = SettingsStore()
         let enabledValue = store.enabled
@@ -70,14 +76,14 @@ struct MenuBarMenu: View {
         enabled = enabledValue
         permissionGranted = trustedValue
         showWelcome = welcomeValue
-        coordinator = TranslationCoordinator(engine: Self.makeEngine())
+        coordinator = TranslationCoordinator(engine: HostedTranslationEngine(holder: translationHolder))
         speech = SpeechService()
-        audioContextDetector = SystemAudioContextDetector()
         NSLog("LiveEnglish startup trusted=%@ enabled=%@", String(trustedValue), String(enabledValue))
         DiagnosticLog.write("startup trusted=\(trustedValue) enabled=\(enabledValue)")
         logger.info("startup trusted=\(trustedValue, privacy: .public) enabled=\(enabledValue, privacy: .public)")
         input.isEnabled = enabled
         input.delayMilliseconds = settings.translationSpeed
+        input.timing = settings.translationTiming
         overlay.hideAfter = settings.hideAfter
         overlay.neverHide = settings.neverHide
         overlay.textSize = settings.textSize
@@ -90,10 +96,11 @@ struct MenuBarMenu: View {
         monitor.onFocusChanged = { [weak self] in self?.input.reset() }
         input.excludedBundleIDs = settings.excludedBundleIDs
         monitor.excludedBundleIDs = settings.excludedBundleIDs
-        input.onSentence = { [weak self] text, sentenceKey, session, screen in
-            self?.translate(text, sentenceKey: sentenceKey, session: session, screen: screen)
+        input.onSentence = { [weak self] text, sentenceKey, session, screen, snapshot in
+            self?.translate(text, sentenceKey: sentenceKey, session: session, screen: screen, snapshot: snapshot)
         }
         input.onEmpty = { [weak self] in
+            self?.clearPendingAction()
             self?.overlay.hide()
             self?.speech.stop()
             Task { await self?.coordinator.cancel() }
@@ -117,6 +124,14 @@ struct MenuBarMenu: View {
                 }
             }
         }
+        hotKey.onAction = { [weak self] action in
+            switch action {
+            case .replace: self?.handleReplaceHotKey()
+            case .copy: self?.handleCopyHotKey()
+            case .translate: self?.handleTranslateHotKey()
+            }
+        }
+        refreshHotKeys()
         if showWelcome {
             Task { @MainActor [weak self] in
                 try? await Task.sleep(for: .milliseconds(250))
@@ -124,9 +139,9 @@ struct MenuBarMenu: View {
             }
         }
     }
-    private static func makeEngine() -> any TranslationEngine {
-        if #available(macOS 26.0, *) { return AppleTranslationEngine() }
-        return DemoTranslationEngine()
+    func startTranslationHost() {
+        guard translationHostWindow == nil else { return }
+        translationHostWindow = TranslationHostWindowController(holder: translationHolder)
     }
     func toggle() {
         enabled.toggle()
@@ -135,9 +150,12 @@ struct MenuBarMenu: View {
         if enabled {
             permissionGranted = AXIsProcessTrusted()
             monitor.start()
+            refreshHotKeys()
         } else {
             input.reset()
             monitor.stop()
+            clearPendingAction()
+            refreshHotKeys()
             Task { await coordinator.cancel() }
             speech.stop()
             overlay.hide()
@@ -195,8 +213,24 @@ struct MenuBarMenu: View {
         NSApp.activate(ignoringOtherApps: true)
         welcomeWindow = window
     }
-    private func translate(_ text: String, sentenceKey: String, session: InputSessionID, screen: NSScreen?) {
+    private func translate(
+        _ text: String, sentenceKey: String, session: InputSessionID, screen: NSScreen?, snapshot: TextSnapshot
+    ) {
         currentSession = session
+        let previous = pendingAction
+        let sameSentence = previous?.sentenceKey == sentenceKey && previous?.session == session
+        var sourceWithTerminator: String?
+        if settings.replaceOriginal {
+            sourceWithTerminator = FieldReplacement.evaluate(fieldText: snapshot.text, source: text)?
+                .sourceWithTerminator
+        }
+        pendingAction = PendingTranslationAction(
+            text: nil,
+            sourceWithTerminator: sourceWithTerminator,
+            session: session,
+            sentenceKey: sentenceKey,
+            applyReplaceWhenReady: sameSentence && previous?.applyReplaceWhenReady == true,
+            applyCopyWhenReady: sameSentence && previous?.applyCopyWhenReady == true)
         DiagnosticLog.write("translation requested length=\(text.count)")
         logger.info("translation requested length=\(text.count, privacy: .public)")
         let coordinator = coordinator
@@ -222,31 +256,133 @@ struct MenuBarMenu: View {
             return
         }
         translation = result
+        if pendingAction?.session == session, pendingAction?.sentenceKey == sentenceKey {
+            pendingAction?.text = result
+        } else {
+            pendingAction = PendingTranslationAction(
+                text: result, sourceWithTerminator: nil, session: session, sentenceKey: sentenceKey)
+        }
         DiagnosticLog.write("translation result accepted length=\(result.count)")
         logger.info("translation result accepted length=\(result.count, privacy: .public)")
         overlay.show(result, key: sentenceKey, on: screen)
         speakIfAllowed(result)
+        if pendingAction?.applyReplaceWhenReady == true { applyPendingReplace() }
+        if pendingAction?.applyCopyWhenReady == true { applyPendingCopy() }
     }
     private func speakIfAllowed(_ text: String) {
-        let context = audioContextDetector.currentContext()
         guard speechPolicy.shouldSpeak(
-            speechEnabled: settings.speechEnabled,
-            autoSpeakPolicy: settings.autoSpeakPolicy,
-            audioContext: context)
+            speechEnabled: settings.speechEnabled, translationTiming: settings.translationTiming)
         else {
+            DiagnosticLog.write("speech skipped")
             return
         }
-        speech.speak(
-            text,
-            voiceIdentifier: settings.speechVoiceIdentifier,
-            rate: settings.speechRate,
-            volume: settings.speechVolume)
+        DiagnosticLog.write("speech speaking length=\(text.count)")
+        speech.speak(text)
     }
+    func setReplaceOriginal(_ enabled: Bool) {
+        settings.replaceOriginal = enabled
+        refreshHotKeys()
+    }
+
+    func setCopyTranslation(_ enabled: Bool) {
+        settings.copyTranslation = enabled
+        refreshHotKeys()
+    }
+
+    func setReplaceShortcut(_ shortcut: ReplaceShortcut) {
+        settings.replaceShortcut = shortcut
+        refreshHotKeys()
+    }
+
+    func setCopyShortcut(_ shortcut: ReplaceShortcut) {
+        settings.copyShortcut = shortcut
+        refreshHotKeys()
+    }
+
+    func setTranslationTiming(_ timing: TranslationTiming) {
+        settings.translationTiming = timing
+        input.timing = timing
+        refreshHotKeys()
+    }
+
+    func setTranslateShortcut(_ shortcut: ReplaceShortcut) {
+        settings.translateShortcut = shortcut
+        refreshHotKeys()
+    }
+
+    private func refreshHotKeys() {
+        hotKey.set(.replace, shortcut: enabled && settings.replaceOriginal ? settings.replaceShortcut : nil)
+        hotKey.set(.copy, shortcut: enabled && settings.copyTranslation ? settings.copyShortcut : nil)
+        hotKey.set(
+            .translate,
+            shortcut: enabled && settings.translationTiming == .shortcut ? settings.translateShortcut : nil)
+    }
+
+    private func handleTranslateHotKey() {
+        guard enabled, settings.translationTiming == .shortcut else { return }
+        guard let captured = monitor.snapshotNow() else { return }
+        input.translateNow(captured.snapshot, session: captured.session, screen: captured.screen)
+    }
+
+    private func handleReplaceHotKey() {
+        guard enabled, settings.replaceOriginal else { return }
+        if pendingAction?.text != nil, pendingAction?.sourceWithTerminator != nil {
+            applyPendingReplace()
+        } else if pendingAction != nil {
+            pendingAction?.applyReplaceWhenReady = true
+        }
+    }
+
+    private func handleCopyHotKey() {
+        guard enabled, settings.copyTranslation else { return }
+        if pendingAction?.text != nil {
+            applyPendingCopy()
+        } else if pendingAction != nil {
+            pendingAction?.applyCopyWhenReady = true
+        }
+    }
+
+    private func applyPendingReplace() {
+        guard enabled, settings.replaceOriginal else { return }
+        guard var pending = pendingAction, let translation = pending.text,
+            let source = pending.sourceWithTerminator
+        else { return }
+        if monitor.replace(sourceWithTerminator: source, translation: translation) {
+            pending.sourceWithTerminator = nil
+            pending.applyReplaceWhenReady = false
+            pendingAction = pending
+        }
+    }
+
+    private func applyPendingCopy() {
+        guard enabled, settings.copyTranslation else { return }
+        _ = TranslationClipboard.copy(pendingAction?.text)
+        pendingAction?.applyCopyWhenReady = false
+    }
+
+    private func clearPendingAction() {
+        pendingAction = nil
+        translation = ""
+    }
+
     deinit { permissionPoll?.cancel() }
+}
+
+private struct PendingTranslationAction {
+    var text: String?
+    var sourceWithTerminator: String?
+    var session: InputSessionID
+    var sentenceKey: String
+    var applyReplaceWhenReady = false
+    var applyCopyWhenReady = false
 }
 
 struct AboutView: View {
     var language: UILanguage = .chinese
+    var checker = UpdateChecker()
+    var openURL: (URL) -> Void = { NSWorkspace.shared.open($0) }
+
+    @State private var checkStatus: UpdateCheckStatus = .idle
 
     var body: some View {
         VStack(spacing: 14) {
@@ -255,11 +391,34 @@ struct AboutView: View {
             Text(L10n.productName(language)).font(.largeTitle.bold())
             Text(L10n.version(language)).foregroundStyle(.secondary)
             Text(L10n.aboutBody(language)).multilineTextAlignment(.center).foregroundStyle(.secondary)
+            Button(L10n.checkForUpdates(language)) {
+                Task { await checkForUpdates() }
+            }
+            .disabled(checkStatus == .checking)
+            if let statusText {
+                Text(statusText).font(.caption).foregroundStyle(.secondary)
+            }
             Link(L10n.aboutRepo(language), destination: URL(string: "https://github.com/krisir/floattrans")!)
             Link(L10n.aboutDeveloper(language), destination: URL(string: "mailto:psychicsirk@gmail.com")!)
         }
         .padding(28)
         .frame(maxWidth: 420)
+    }
+
+    private var statusText: String? {
+        switch checkStatus {
+        case .idle: return nil
+        case .checking: return L10n.checkForUpdatesChecking(language)
+        case .upToDate: return L10n.checkForUpdatesUpToDate(language)
+        case .failed: return L10n.checkForUpdatesFailed(language)
+        }
+    }
+
+    private func checkForUpdates() async {
+        checkStatus = .checking
+        let result = await checker.check()
+        if let url = result.urlToOpen { openURL(url) }
+        checkStatus = result.statusAfterCheck
     }
 }
 
@@ -301,7 +460,9 @@ struct WelcomeView: View {
             if step == 1 && !state.permissionGranted {
                 Button("Allow Permission") { state.requestPermission() }.buttonStyle(.borderedProminent)
             }
-            if step == 1 { if #available(macOS 26.0, *) { LanguagePackSetupView() } }
+            if step == 1 {
+                LanguageResourceRow(language: state.settings.uiLanguage, holder: state.translationHolder)
+            }
             Spacer()
             Button(step == 2 ? "Done" : "Continue") { if step < 2 { step += 1 } else { state.finishOnboarding() } }
                 .buttonStyle(.borderedProminent)
@@ -309,41 +470,39 @@ struct WelcomeView: View {
     }
 }
 
-@available(macOS 26.0, *)
-struct LanguagePackSetupView: View {
+struct TranslationHostView: View {
+    let holder: TranslationSessionHolder
     @State private var configuration = TranslationSession.Configuration(
-        source: Locale.Language(identifier: "zh"), target: Locale.Language(identifier: "en"))
-    @State private var requested = false
-    @State private var status = "Translation languages are installed by macOS on first use."
+        source: TranslationLanguages.source, target: TranslationLanguages.target)
+
     var body: some View {
-        VStack(spacing: 8) {
-            Button("Install Chinese → English Languages") {
-                requested = true
-                configuration.invalidate()
-            }
-            Text(status).font(.caption).foregroundStyle(.secondary)
-        }.translationTask(configuration) { session in
-            guard requested else { return }
-            do {
-                try await session.prepareTranslation()
-                status = "Downloading languages…"
-                let availability = LanguageAvailability()
-                for _ in 0..<120 {
-                    let state = await availability.status(
-                        from: Locale.Language(identifier: "zh"), to: Locale.Language(identifier: "en"))
-                    if state == .installed {
-                        status = "Languages ready."
-                        return
-                    }
-                    if state == .unsupported {
-                        status = "Chinese → English is not supported on this Mac."
-                        return
-                    }
-                    try await Task.sleep(for: .seconds(1))
-                }
-                status = "Download is still in progress. Check Language & Region."
-            } catch { status = "Language download was not completed." }
+        Color.clear.frame(width: 1, height: 1).translationTask(configuration) { session in
+            holder.attach(session)
         }
+    }
+}
+
+@MainActor final class TranslationHostWindowController {
+    private let window: NSWindow
+
+    init(holder: TranslationSessionHolder) {
+        let panel = NSPanel(
+            contentRect: NSRect(x: -2000, y: -2000, width: 8, height: 8),
+            styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        panel.isFloatingPanel = false
+        panel.hidesOnDeactivate = false
+        panel.becomesKeyOnlyIfNeeded = true
+        panel.isExcludedFromWindowsMenu = true
+        panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
+        panel.isReleasedWhenClosed = false
+        panel.hasShadow = false
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.alphaValue = 0.01
+        panel.ignoresMouseEvents = true
+        panel.contentView = NSHostingView(rootView: TranslationHostView(holder: holder))
+        panel.orderFrontRegardless()
+        window = panel
     }
 }
 

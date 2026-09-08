@@ -14,52 +14,50 @@ protocol AudioContextDetecting: Sendable {
 }
 
 @MainActor protocol SpeechPerforming: AnyObject {
-    func speak(_ text: String, voiceIdentifier: String, rate: Double, volume: Double)
+    func speak(_ text: String)
     func stop()
 }
 
 struct SpeechPolicyEvaluator: Sendable {
-    func shouldSpeak(speechEnabled: Bool, autoSpeakPolicy: AutoSpeakPolicy, audioContext: AudioContext) -> Bool {
+    func shouldSpeak(speechEnabled: Bool, translationTiming: TranslationTiming) -> Bool {
         guard speechEnabled else { return false }
-        switch autoSpeakPolicy {
-        case .quietOnly:
-            return audioContext == .silent
-        case .always:
-            return true
-        case .never:
-            return false
+        switch translationTiming {
+        case .completeSentence, .shortcut: return true
+        case .pause: return false
         }
     }
 }
 
 @MainActor final class SpeechService: NSObject, SpeechPerforming, AVSpeechSynthesizerDelegate {
     private let synthesizer = AVSpeechSynthesizer()
+    private let englishVoice = AVSpeechSynthesisVoice(language: "en-US")
 
     override init() {
         super.init()
         synthesizer.delegate = self
     }
 
-    func speak(_ text: String, voiceIdentifier: String, rate: Double, volume: Double) {
+    func speak(_ text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        synthesizer.stopSpeaking(at: .immediate)
-        let utterance = AVSpeechUtterance(string: trimmed)
-        utterance.voice = Self.voice(for: voiceIdentifier)
-        utterance.rate = Float(min(max(rate, 0.1), 1.0))
-        utterance.volume = Float(min(max(volume, 0.0), 1.0))
-        synthesizer.speak(utterance)
+        let synthesizer = synthesizer
+        let voice = englishVoice
+        // Leave the Swift Task so AXCoreUtilities does not unsafeForcedSync from a concurrent job.
+        DispatchQueue.main.async {
+            synthesizer.stopSpeaking(at: .immediate)
+            let utterance = AVSpeechUtterance(string: trimmed)
+            utterance.voice = voice
+            utterance.rate = 0.5
+            utterance.volume = 1.0
+            synthesizer.speak(utterance)
+        }
     }
 
     func stop() {
-        synthesizer.stopSpeaking(at: .immediate)
-    }
-
-    private static func voice(for identifier: String) -> AVSpeechSynthesisVoice? {
-        if let exact = AVSpeechSynthesisVoice(identifier: identifier) {
-            return exact
+        let synthesizer = synthesizer
+        DispatchQueue.main.async {
+            synthesizer.stopSpeaking(at: .immediate)
         }
-        return AVSpeechSynthesisVoice(language: identifier) ?? AVSpeechSynthesisVoice(language: "en-US")
     }
 }
 

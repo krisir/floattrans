@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import ServiceManagement
 
@@ -59,16 +60,86 @@ enum TranslationSpeed: Int, CaseIterable {
     case relaxed = 700
 }
 
-enum AutoSpeakPolicy: String, CaseIterable, Sendable {
-    case quietOnly = "Quiet Only"
-    case always = "Always"
-    case never = "Never"
+enum TranslationTiming: String, CaseIterable, Sendable {
+    case pause = "Pause"
+    case completeSentence = "Complete Sentence"
+    case shortcut = "Shortcut"
 
     func displayName(for lang: UILanguage) -> String {
         switch self {
-        case .quietOnly: return L10n.autoSpeakQuietOnly(lang)
-        case .always: return L10n.autoSpeakAlways(lang)
-        case .never: return L10n.autoSpeakNever(lang)
+        case .pause: return L10n.timingPause(lang)
+        case .completeSentence: return L10n.timingCompleteSentence(lang)
+        case .shortcut: return L10n.timingShortcut(lang)
+        }
+    }
+}
+
+struct ReplaceShortcut: Equatable, Sendable {
+    var keyCode: UInt32
+    var carbonModifiers: UInt32
+
+    static let controlKeyFlag: UInt32 = 1 << 12
+    static let shiftKeyFlag: UInt32 = 1 << 9
+    static let optionKeyFlag: UInt32 = 1 << 11
+    static let commandKeyFlag: UInt32 = 1 << 8
+    static let returnKeyCode: UInt32 = 0x24
+    static let cKeyCode: UInt32 = 0x08
+    static let tKeyCode: UInt32 = 0x11
+    static let leftBracketKeyCode: UInt32 = 0x21
+    static let rightBracketKeyCode: UInt32 = 0x1E
+    static let escapeKeyCode: UInt32 = 0x35
+
+    static let controlShiftReturn = ReplaceShortcut(
+        keyCode: returnKeyCode, carbonModifiers: controlKeyFlag | shiftKeyFlag)
+    static let controlShiftC = ReplaceShortcut(
+        keyCode: cKeyCode, carbonModifiers: controlKeyFlag | shiftKeyFlag)
+    static let controlShiftT = ReplaceShortcut(
+        keyCode: tKeyCode, carbonModifiers: controlKeyFlag | shiftKeyFlag)
+    static let optionShiftLeftBracket = ReplaceShortcut(
+        keyCode: leftBracketKeyCode, carbonModifiers: optionKeyFlag | shiftKeyFlag)
+    static let optionShiftRightBracket = ReplaceShortcut(
+        keyCode: rightBracketKeyCode, carbonModifiers: optionKeyFlag | shiftKeyFlag)
+
+    var displayString: String {
+        var parts = ""
+        if carbonModifiers & Self.controlKeyFlag != 0 { parts += "⌃" }
+        if carbonModifiers & Self.optionKeyFlag != 0 { parts += "⌥" }
+        if carbonModifiers & Self.shiftKeyFlag != 0 { parts += "⇧" }
+        if carbonModifiers & Self.commandKeyFlag != 0 { parts += "⌘" }
+        parts += Self.glyph(for: keyCode)
+        return parts
+    }
+
+    static func from(event: NSEvent) -> ReplaceShortcut? {
+        if UInt32(event.keyCode) == escapeKeyCode { return nil }
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        var carbon: UInt32 = 0
+        if flags.contains(.control) { carbon |= controlKeyFlag }
+        if flags.contains(.option) { carbon |= optionKeyFlag }
+        if flags.contains(.shift) { carbon |= shiftKeyFlag }
+        if flags.contains(.command) { carbon |= commandKeyFlag }
+        guard carbon & (controlKeyFlag | optionKeyFlag | commandKeyFlag) != 0 else { return nil }
+        return ReplaceShortcut(keyCode: UInt32(event.keyCode), carbonModifiers: carbon)
+    }
+
+    private static func glyph(for keyCode: UInt32) -> String {
+        switch keyCode {
+        case 0x24, 0x4C: return "↩"
+        case 0x30: return "⇥"
+        case 0x31: return "Space"
+        case 0x33: return "⌫"
+        case 0x35: return "⎋"
+        default:
+            let letters: [UInt32: String] = [
+                0x00: "A", 0x01: "S", 0x02: "D", 0x03: "F", 0x04: "H", 0x05: "G", 0x06: "Z", 0x07: "X",
+                0x08: "C", 0x09: "V", 0x0B: "B", 0x0C: "Q", 0x0D: "W", 0x0E: "E", 0x0F: "R", 0x10: "Y",
+                0x11: "T", 0x12: "1", 0x13: "2", 0x14: "3", 0x15: "4", 0x16: "6", 0x17: "5", 0x18: "=",
+                0x19: "9", 0x1A: "7", 0x1B: "-", 0x1C: "8", 0x1D: "0", 0x1E: "]", 0x1F: "O",
+                0x20: "U", 0x21: "[", 0x22: "I", 0x23: "P", 0x25: "L", 0x26: "J", 0x27: "'", 0x28: "K",
+                0x29: ";", 0x2A: "\\", 0x2B: ",", 0x2C: "/", 0x2D: "N", 0x2E: "M", 0x2F: ".",
+                0x32: "`",
+            ]
+            return letters[keyCode] ?? "Key \(keyCode)"
         }
     }
 }
@@ -113,46 +184,28 @@ enum AutoSpeakPolicy: String, CaseIterable, Sendable {
             defaults.set(translationSpeed, forKey: "translationSpeed")
         }
     }
+    @Published var translationTiming: TranslationTiming {
+        didSet { defaults.set(translationTiming.rawValue, forKey: "translationTiming") }
+    }
     @Published var speechEnabled: Bool { didSet { defaults.set(speechEnabled, forKey: "speechEnabled") } }
-    @Published var speechVoiceIdentifier: String {
-        didSet {
-            if speechVoiceIdentifier.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                speechVoiceIdentifier = Self.defaultSpeechVoiceIdentifier
-                return
-            }
-            defaults.set(speechVoiceIdentifier, forKey: "speechVoiceIdentifier")
-        }
+    @Published var replaceOriginal: Bool { didSet { defaults.set(replaceOriginal, forKey: "replaceOriginal") } }
+    @Published var copyTranslation: Bool { didSet { defaults.set(copyTranslation, forKey: "copyTranslation") } }
+    @Published var replaceShortcut: ReplaceShortcut {
+        didSet { persistShortcut(replaceShortcut, keyCodeKey: "replaceShortcutKeyCode", modifiersKey: "replaceShortcutModifiers") }
     }
-    @Published var speechRate: Double {
-        didSet {
-            let normalized = Self.normalizedSpeechRate(speechRate)
-            if speechRate != normalized {
-                speechRate = normalized
-                return
-            }
-            defaults.set(speechRate, forKey: "speechRate")
-        }
+    @Published var copyShortcut: ReplaceShortcut {
+        didSet { persistShortcut(copyShortcut, keyCodeKey: "copyShortcutKeyCode", modifiersKey: "copyShortcutModifiers") }
     }
-    @Published var speechVolume: Double {
+    @Published var translateShortcut: ReplaceShortcut {
         didSet {
-            let normalized = Self.normalizedSpeechVolume(speechVolume)
-            if speechVolume != normalized {
-                speechVolume = normalized
-                return
-            }
-            defaults.set(speechVolume, forKey: "speechVolume")
+            persistShortcut(
+                translateShortcut, keyCodeKey: "translateShortcutKeyCode", modifiersKey: "translateShortcutModifiers")
         }
-    }
-    @Published var autoSpeakPolicy: AutoSpeakPolicy {
-        didSet { defaults.set(autoSpeakPolicy.rawValue, forKey: "autoSpeakPolicy") }
     }
     @Published var excludedBundleIDs: Set<String> {
         didSet { defaults.set(Array(excludedBundleIDs), forKey: "excludedBundleIDs") }
     }
     private let defaults = UserDefaults.standard
-    static let defaultSpeechVoiceIdentifier = "en-US"
-    static let defaultSpeechRate = 0.5
-    static let defaultSpeechVolume = 0.8
 
     init() {
         enabled = defaults.object(forKey: "enabled") as? Bool ?? true
@@ -178,17 +231,21 @@ enum AutoSpeakPolicy: String, CaseIterable, Sendable {
         let speedValue = TranslationSpeed(rawValue: defaults.object(forKey: "translationSpeed") as? Int ?? 450)?.rawValue
             ?? TranslationSpeed.balanced.rawValue
         translationSpeed = speedValue
+        translationTiming =
+            TranslationTiming(rawValue: defaults.string(forKey: "translationTiming") ?? TranslationTiming.pause.rawValue)
+            ?? .pause
         speechEnabled = defaults.object(forKey: "speechEnabled") as? Bool ?? false
-        let storedVoice = defaults.string(forKey: "speechVoiceIdentifier")?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        speechVoiceIdentifier = storedVoice?.isEmpty == false ? storedVoice! : Self.defaultSpeechVoiceIdentifier
-        speechRate = Self.normalizedSpeechRate(
-            defaults.object(forKey: "speechRate") as? Double ?? Self.defaultSpeechRate)
-        speechVolume = Self.normalizedSpeechVolume(
-            defaults.object(forKey: "speechVolume") as? Double ?? Self.defaultSpeechVolume)
-        autoSpeakPolicy =
-            AutoSpeakPolicy(rawValue: defaults.string(forKey: "autoSpeakPolicy") ?? AutoSpeakPolicy.quietOnly.rawValue)
-            ?? .quietOnly
+        replaceOriginal = defaults.object(forKey: "replaceOriginal") as? Bool ?? false
+        copyTranslation = defaults.object(forKey: "copyTranslation") as? Bool ?? false
+        replaceShortcut = Self.loadShortcut(
+            defaults: defaults, keyCodeKey: "replaceShortcutKeyCode", modifiersKey: "replaceShortcutModifiers",
+            fallback: .optionShiftLeftBracket)
+        copyShortcut = Self.loadShortcut(
+            defaults: defaults, keyCodeKey: "copyShortcutKeyCode", modifiersKey: "copyShortcutModifiers",
+            fallback: .optionShiftRightBracket)
+        translateShortcut = Self.loadShortcut(
+            defaults: defaults, keyCodeKey: "translateShortcutKeyCode", modifiersKey: "translateShortcutModifiers",
+            fallback: .controlShiftT)
         excludedBundleIDs = Set(
             defaults.stringArray(forKey: "excludedBundleIDs") ?? [
                 "com.agilebits.onepassword7", "com.apple.keychainaccess", "com.apple.dt.Xcode", "com.openai.codex",
@@ -199,12 +256,20 @@ enum AutoSpeakPolicy: String, CaseIterable, Sendable {
         }
     }
 
-    private static func normalizedSpeechRate(_ value: Double) -> Double {
-        min(max(value, 0.1), 1.0)
+    private static func loadShortcut(
+        defaults: UserDefaults, keyCodeKey: String, modifiersKey: String, fallback: ReplaceShortcut
+    ) -> ReplaceShortcut {
+        guard defaults.object(forKey: keyCodeKey) != nil, defaults.object(forKey: modifiersKey) != nil else {
+            return fallback
+        }
+        return ReplaceShortcut(
+            keyCode: UInt32(defaults.integer(forKey: keyCodeKey)),
+            carbonModifiers: UInt32(defaults.integer(forKey: modifiersKey)))
     }
 
-    private static func normalizedSpeechVolume(_ value: Double) -> Double {
-        min(max(value, 0.0), 1.0)
+    private func persistShortcut(_ shortcut: ReplaceShortcut, keyCodeKey: String, modifiersKey: String) {
+        defaults.set(Int(shortcut.keyCode), forKey: keyCodeKey)
+        defaults.set(Int(shortcut.carbonModifiers), forKey: modifiersKey)
     }
 
     private func updateLoginItem(_ enabled: Bool) {

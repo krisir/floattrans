@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "LiveEnglish",
-    platforms: [.macOS(.v13)],
+    platforms: [.macOS(.v15)],
     products: [.executable(name: "FloatTrans", targets: ["LiveEnglish"])],
     targets: [
         .executableTarget(

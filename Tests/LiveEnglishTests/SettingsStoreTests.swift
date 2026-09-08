@@ -7,7 +7,9 @@ final class SettingsStoreTests: XCTestCase {
     private let keys = [
         "enabled", "hideAfter", "neverHide", "launchAtLogin", "textSize", "overlayPosition", "overlayEdgeDistance",
         "overlayBehavior", "uiLanguage", "translationSpeed", "speechEnabled", "speechVoiceIdentifier", "speechRate",
-        "speechVolume", "autoSpeakPolicy", "excludedBundleIDs",
+        "speechVolume", "autoSpeakPolicy", "excludedBundleIDs", "replaceOriginal", "copyTranslation",
+        "replaceShortcutKeyCode", "replaceShortcutModifiers", "copyShortcutKeyCode", "copyShortcutModifiers",
+        "translationTiming", "translateShortcutKeyCode", "translateShortcutModifiers",
     ]
 
     func testDisplayNamesAndRenamedBehaviorRawValue() {
@@ -19,8 +21,46 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(OverlayPosition.bottomCenter.displayName(for: .english), "Bottom Center")
         XCTAssertEqual(OverlayTextSize.small.displayName(for: .chinese), "小")
         XCTAssertEqual(OverlayTextSize.medium.displayName(for: .english), "Medium")
-        XCTAssertEqual(AutoSpeakPolicy.quietOnly.displayName(for: .chinese), "仅在 Mac 安静时")
-        XCTAssertEqual(AutoSpeakPolicy.always.displayName(for: .english), "Always")
+        XCTAssertEqual(L10n.groupSpeech(.chinese), "朗读")
+        XCTAssertEqual(L10n.groupSpeech(.english), "Speech")
+        XCTAssertEqual(L10n.readTranslationsAloud(.chinese), "朗读翻译结果")
+        XCTAssertEqual(L10n.readTranslationsAloud(.english), "Read Translations Aloud")
+        XCTAssertEqual(
+            L10n.autoSpeakTimingHint(.chinese), "超时翻译时不会朗读。请改用完整句子翻译或快捷键触发翻译。")
+        XCTAssertEqual(
+            L10n.autoSpeakTimingHint(.english),
+            "On Pause does not speak. Use Complete Sentence or On Shortcut to hear translations.")
+        XCTAssertEqual(L10n.replaceOriginal(.chinese), "替换原文")
+        XCTAssertEqual(L10n.replaceOriginal(.english), "Replace Original")
+        XCTAssertEqual(L10n.copyTranslation(.chinese), "复制译文")
+        XCTAssertEqual(L10n.copyTranslation(.english), "Copy Translation")
+        XCTAssertEqual(L10n.replaceShortcut(.chinese), "替换快捷键")
+        XCTAssertEqual(L10n.copyShortcut(.english), "Copy Shortcut")
+        XCTAssertEqual(L10n.translationTiming(.chinese), "翻译时机")
+        XCTAssertEqual(L10n.timingPause(.chinese), "超时翻译")
+        XCTAssertEqual(L10n.timingCompleteSentence(.english), "Complete Sentence")
+        XCTAssertEqual(L10n.timingShortcut(.chinese), "快捷键触发翻译")
+        XCTAssertEqual(L10n.translateShortcut(.english), "Translate Shortcut")
+        XCTAssertEqual(TranslationTiming.pause.displayName(for: .english), "On Pause")
+        XCTAssertEqual(
+            L10n.replaceOriginalHint(.chinese), "按下快捷键，把当前译文写回输入框。")
+        XCTAssertEqual(
+            L10n.replaceOriginalHint(.english), "Press the shortcut to replace the field with the current translation.")
+        XCTAssertEqual(ReplaceShortcut.optionShiftLeftBracket.displayString, "⌥⇧[")
+        XCTAssertEqual(ReplaceShortcut.optionShiftRightBracket.displayString, "⌥⇧]")
+        XCTAssertFalse(ReplaceShortcut.optionShiftLeftBracket.displayString.contains("Key "))
+        XCTAssertFalse(ReplaceShortcut.optionShiftRightBracket.displayString.contains("{"))
+        XCTAssertFalse(ReplaceShortcut.optionShiftRightBracket.displayString.contains("}"))
+        XCTAssertEqual(L10n.checkForUpdates(.chinese), "检查更新")
+        XCTAssertEqual(L10n.checkForUpdates(.english), "Check for Updates")
+        XCTAssertEqual(L10n.checkForUpdatesChecking(.chinese), "正在检查…")
+        XCTAssertEqual(L10n.checkForUpdatesChecking(.english), "Checking…")
+        XCTAssertEqual(L10n.checkForUpdatesUpToDate(.chinese), "已是最新版本")
+        XCTAssertEqual(L10n.checkForUpdatesUpToDate(.english), "You’re up to date")
+        XCTAssertEqual(L10n.checkForUpdatesFailed(.chinese), "检查更新失败")
+        XCTAssertEqual(L10n.checkForUpdatesFailed(.english), "Couldn’t check for updates")
+        XCTAssertEqual(L10n.version(.chinese, marketing: "0.1.0"), "版本 0.1.0")
+        XCTAssertEqual(L10n.version(.english, marketing: "0.1.0"), "Version 0.1.0")
     }
 
     func testMigratesLegacyHideAfterAndBehavior() {
@@ -74,10 +114,12 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertFalse(store.launchAtLogin)
         XCTAssertEqual(store.uiLanguage, .chinese)
         XCTAssertFalse(store.speechEnabled)
-        XCTAssertEqual(store.speechVoiceIdentifier, "en-US")
-        XCTAssertEqual(store.speechRate, 0.5)
-        XCTAssertEqual(store.speechVolume, 0.8)
-        XCTAssertEqual(store.autoSpeakPolicy, .quietOnly)
+        XCTAssertFalse(store.replaceOriginal)
+        XCTAssertFalse(store.copyTranslation)
+        XCTAssertEqual(store.replaceShortcut, .optionShiftLeftBracket)
+        XCTAssertEqual(store.copyShortcut, .optionShiftRightBracket)
+        XCTAssertEqual(store.translationTiming, .pause)
+        XCTAssertEqual(store.translateShortcut, .controlShiftT)
     }
 
     func testUILanguagePersistsAndDefaultsToChinese() {
@@ -113,37 +155,112 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(reloaded.translationSpeed, 450)
     }
 
-    func testSpeechSettingsPersistAndInvalidValuesNormalize() {
+    func testSpeechEnabledPersistsAndLeftoverKeysAreIgnored() {
         let defaults = UserDefaults.standard
         let saved = snapshot(defaults)
         defer { restore(defaults, saved) }
 
         for key in keys { defaults.removeObject(forKey: key) }
         defaults.set(false, forKey: "launchAtLogin")
-        defaults.set("", forKey: "speechVoiceIdentifier")
-        defaults.set(4.0, forKey: "speechRate")
-        defaults.set(-1.0, forKey: "speechVolume")
-        defaults.set("Mystery", forKey: "autoSpeakPolicy")
+        defaults.set("en-GB", forKey: "speechVoiceIdentifier")
+        defaults.set(0.35, forKey: "speechRate")
+        defaults.set(0.65, forKey: "speechVolume")
+        defaults.set("Always", forKey: "autoSpeakPolicy")
 
         let store = SettingsStore()
         XCTAssertFalse(store.speechEnabled)
-        XCTAssertEqual(store.speechVoiceIdentifier, "en-US")
-        XCTAssertEqual(store.speechRate, 1.0)
-        XCTAssertEqual(store.speechVolume, 0.0)
-        XCTAssertEqual(store.autoSpeakPolicy, .quietOnly)
+        XCTAssertEqual(store.translationTiming, .pause)
+        XCTAssertEqual(defaults.string(forKey: "speechVoiceIdentifier"), "en-GB")
+        XCTAssertEqual(defaults.double(forKey: "speechRate"), 0.35)
+        XCTAssertEqual(defaults.double(forKey: "speechVolume"), 0.65)
+        XCTAssertEqual(defaults.string(forKey: "autoSpeakPolicy"), "Always")
 
         store.speechEnabled = true
-        store.speechVoiceIdentifier = "en-GB"
-        store.speechRate = 0.35
-        store.speechVolume = 0.65
-        store.autoSpeakPolicy = .always
+        XCTAssertEqual(store.translationTiming, .pause)
 
         let reloaded = SettingsStore()
         XCTAssertTrue(reloaded.speechEnabled)
-        XCTAssertEqual(reloaded.speechVoiceIdentifier, "en-GB")
-        XCTAssertEqual(reloaded.speechRate, 0.35)
-        XCTAssertEqual(reloaded.speechVolume, 0.65)
-        XCTAssertEqual(reloaded.autoSpeakPolicy, .always)
+        XCTAssertEqual(reloaded.translationTiming, .pause)
+        XCTAssertEqual(defaults.string(forKey: "speechVoiceIdentifier"), "en-GB")
+        XCTAssertEqual(defaults.double(forKey: "speechRate"), 0.35)
+        XCTAssertEqual(defaults.double(forKey: "speechVolume"), 0.65)
+        XCTAssertEqual(defaults.string(forKey: "autoSpeakPolicy"), "Always")
+    }
+
+    func testReplaceAndCopySettingsPersistAndMissingKeysDefaultSafely() {
+        let defaults = UserDefaults.standard
+        let saved = snapshot(defaults)
+        defer { restore(defaults, saved) }
+
+        for key in keys { defaults.removeObject(forKey: key) }
+        defaults.set(12.0, forKey: "hideAfter")
+        defaults.set(false, forKey: "launchAtLogin")
+        defaults.set(true, forKey: "speechEnabled")
+        let store = SettingsStore()
+        XCTAssertFalse(store.replaceOriginal)
+        XCTAssertFalse(store.copyTranslation)
+        XCTAssertEqual(store.replaceShortcut, .optionShiftLeftBracket)
+        XCTAssertEqual(store.copyShortcut, .optionShiftRightBracket)
+        XCTAssertEqual(store.translationTiming, .pause)
+        XCTAssertEqual(store.translateShortcut, .controlShiftT)
+        XCTAssertEqual(store.hideAfter, 12)
+        XCTAssertTrue(store.speechEnabled)
+
+        store.replaceOriginal = true
+        store.copyTranslation = true
+        store.replaceShortcut = ReplaceShortcut(
+            keyCode: ReplaceShortcut.cKeyCode,
+            carbonModifiers: ReplaceShortcut.controlKeyFlag | ReplaceShortcut.optionKeyFlag)
+        store.copyShortcut = ReplaceShortcut(
+            keyCode: ReplaceShortcut.returnKeyCode,
+            carbonModifiers: ReplaceShortcut.controlKeyFlag | ReplaceShortcut.commandKeyFlag)
+        store.translationTiming = .completeSentence
+        store.translateShortcut = ReplaceShortcut(
+            keyCode: ReplaceShortcut.tKeyCode,
+            carbonModifiers: ReplaceShortcut.controlKeyFlag | ReplaceShortcut.commandKeyFlag)
+
+        let reloaded = SettingsStore()
+        XCTAssertTrue(reloaded.replaceOriginal)
+        XCTAssertTrue(reloaded.copyTranslation)
+        XCTAssertEqual(reloaded.replaceShortcut.keyCode, ReplaceShortcut.cKeyCode)
+        XCTAssertEqual(
+            reloaded.replaceShortcut.carbonModifiers, ReplaceShortcut.controlKeyFlag | ReplaceShortcut.optionKeyFlag)
+        XCTAssertEqual(reloaded.copyShortcut.keyCode, ReplaceShortcut.returnKeyCode)
+        XCTAssertEqual(
+            reloaded.copyShortcut.carbonModifiers, ReplaceShortcut.controlKeyFlag | ReplaceShortcut.commandKeyFlag)
+        XCTAssertEqual(reloaded.translationTiming, .completeSentence)
+        XCTAssertEqual(reloaded.translateShortcut.keyCode, ReplaceShortcut.tKeyCode)
+        XCTAssertEqual(
+            reloaded.translateShortcut.carbonModifiers,
+            ReplaceShortcut.controlKeyFlag | ReplaceShortcut.commandKeyFlag)
+        XCTAssertEqual(reloaded.hideAfter, 12)
+        XCTAssertTrue(reloaded.speechEnabled)
+    }
+
+    func testMissingTimingDefaultsWithoutChangingReplaceCopy() {
+        let defaults = UserDefaults.standard
+        let saved = snapshot(defaults)
+        defer { restore(defaults, saved) }
+
+        for key in keys { defaults.removeObject(forKey: key) }
+        defaults.set(true, forKey: "replaceOriginal")
+        defaults.set(true, forKey: "copyTranslation")
+        defaults.set(Int(ReplaceShortcut.cKeyCode), forKey: "replaceShortcutKeyCode")
+        defaults.set(
+            Int(ReplaceShortcut.controlKeyFlag | ReplaceShortcut.optionKeyFlag),
+            forKey: "replaceShortcutModifiers")
+        defaults.set(false, forKey: "launchAtLogin")
+
+        let store = SettingsStore()
+        XCTAssertTrue(store.replaceOriginal)
+        XCTAssertTrue(store.copyTranslation)
+        XCTAssertEqual(store.replaceShortcut.keyCode, ReplaceShortcut.cKeyCode)
+        XCTAssertEqual(
+            store.replaceShortcut.carbonModifiers, ReplaceShortcut.controlKeyFlag | ReplaceShortcut.optionKeyFlag)
+        XCTAssertNotEqual(store.replaceShortcut, .optionShiftLeftBracket)
+        XCTAssertEqual(store.copyShortcut, .optionShiftRightBracket)
+        XCTAssertEqual(store.translationTiming, .pause)
+        XCTAssertEqual(store.translateShortcut, .controlShiftT)
     }
 
     private func snapshot(_ defaults: UserDefaults) -> [String: Any?] {
@@ -164,26 +281,23 @@ final class SettingsStoreTests: XCTestCase {
 final class SpeechPolicyEvaluatorTests: XCTestCase {
     private let evaluator = SpeechPolicyEvaluator()
 
-    func testSpeechDisabledOverridesPolicy() {
-        XCTAssertFalse(
-            evaluator.shouldSpeak(speechEnabled: false, autoSpeakPolicy: .always, audioContext: .silent))
+    func testDisabledIsSilentInEveryMode() {
+        for timing in TranslationTiming.allCases {
+            XCTAssertFalse(
+                evaluator.shouldSpeak(speechEnabled: false, translationTiming: timing),
+                "disabled auto-speak must stay silent in \(timing.rawValue)")
+        }
     }
 
-    func testQuietOnlySpeaksOnlyWhenSilent() {
-        XCTAssertTrue(
-            evaluator.shouldSpeak(speechEnabled: true, autoSpeakPolicy: .quietOnly, audioContext: .silent))
-        XCTAssertFalse(
-            evaluator.shouldSpeak(speechEnabled: true, autoSpeakPolicy: .quietOnly, audioContext: .mediaPlayback))
-        XCTAssertFalse(
-            evaluator.shouldSpeak(speechEnabled: true, autoSpeakPolicy: .quietOnly, audioContext: .communication))
-        XCTAssertFalse(
-            evaluator.shouldSpeak(speechEnabled: true, autoSpeakPolicy: .quietOnly, audioContext: .unknownAudio))
+    func testEnabledPauseIsSilentIncludingPunctuatedSource() {
+        XCTAssertFalse(evaluator.shouldSpeak(speechEnabled: true, translationTiming: .pause))
     }
 
-    func testAlwaysAndNeverPolicies() {
-        XCTAssertTrue(
-            evaluator.shouldSpeak(speechEnabled: true, autoSpeakPolicy: .always, audioContext: .communication))
-        XCTAssertFalse(
-            evaluator.shouldSpeak(speechEnabled: true, autoSpeakPolicy: .never, audioContext: .silent))
+    func testEnabledCompleteSentenceSpeaks() {
+        XCTAssertTrue(evaluator.shouldSpeak(speechEnabled: true, translationTiming: .completeSentence))
+    }
+
+    func testEnabledShortcutSpeaks() {
+        XCTAssertTrue(evaluator.shouldSpeak(speechEnabled: true, translationTiming: .shortcut))
     }
 }
