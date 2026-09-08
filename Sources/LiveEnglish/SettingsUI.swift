@@ -1,7 +1,5 @@
 import AppKit
-import AVFoundation
 import SwiftUI
-@preconcurrency import Translation
 
 struct SettingsRow<Content: View>: View {
     let label: String
@@ -237,11 +235,72 @@ struct SettingsView: View {
                 .labelsHidden()
                 .frame(maxWidth: 260)
             }
-            if #available(macOS 26.0, *) {
-                SettingsRow(label: L10n.languageResources(lang)) {
-                    LanguageResourceRow(language: lang)
+            SettingsRow(label: L10n.translationTiming(lang)) {
+                Picker(
+                    "",
+                    selection: Binding(
+                        get: { settings.translationTiming },
+                        set: { state.setTranslationTiming($0) })
+                ) {
+                    ForEach(TranslationTiming.allCases, id: \.self) { mode in
+                        Text(mode.displayName(for: lang)).tag(mode)
+                    }
+                }
+                .labelsHidden()
+                .frame(maxWidth: 260)
+            }
+            if settings.translationTiming == .shortcut {
+                SettingsRow(label: L10n.translateShortcut(lang)) {
+                    ShortcutRecorderButton(
+                        language: lang,
+                        shortcut: settings.translateShortcut,
+                        onCommit: { state.setTranslateShortcut($0) })
                 }
             }
+            SettingsRow(label: L10n.languageResources(lang)) {
+                LanguageResourceRow(language: lang, holder: state.translationHolder)
+            }
+            SettingsGroupHeader(title: L10n.groupActions(lang))
+            SettingsRow(label: L10n.replaceOriginal(lang)) {
+                Toggle(
+                    "",
+                    isOn: Binding(
+                        get: { settings.replaceOriginal },
+                        set: { state.setReplaceOriginal($0) })
+                )
+                .labelsHidden()
+                .toggleStyle(.switch)
+            }
+            SettingsRow(label: L10n.replaceShortcut(lang)) {
+                ShortcutRecorderButton(
+                    language: lang,
+                    shortcut: settings.replaceShortcut,
+                    onCommit: { state.setReplaceShortcut($0) })
+            }
+            Text(L10n.replaceOriginalHint(lang))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.leading, 162)
+            SettingsRow(label: L10n.copyTranslation(lang)) {
+                Toggle(
+                    "",
+                    isOn: Binding(
+                        get: { settings.copyTranslation },
+                        set: { state.setCopyTranslation($0) })
+                )
+                .labelsHidden()
+                .toggleStyle(.switch)
+            }
+            SettingsRow(label: L10n.copyShortcut(lang)) {
+                ShortcutRecorderButton(
+                    language: lang,
+                    shortcut: settings.copyShortcut,
+                    onCommit: { state.setCopyShortcut($0) })
+            }
+            Text(L10n.copyTranslationHint(lang))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.leading, 162)
             SettingsGroupHeader(title: L10n.groupSpeech(lang))
             SettingsRow(label: L10n.readTranslationsAloud(lang)) {
                 Toggle(
@@ -256,42 +315,11 @@ struct SettingsView: View {
                 .labelsHidden()
                 .toggleStyle(.switch)
             }
-            SettingsRow(label: L10n.speechVoice(lang)) {
-                Picker("", selection: $settings.speechVoiceIdentifier) {
-                    Text("English (US)").tag("en-US")
-                    Text("English (UK)").tag("en-GB")
-                    Text("English (AU)").tag("en-AU")
-                    ForEach(Self.installedEnglishVoices, id: \.identifier) { voice in
-                        Text(voice.name).tag(voice.identifier)
-                    }
-                }
-                .labelsHidden()
-                .frame(maxWidth: 220)
-            }
-            SettingsRow(label: L10n.speechRate(lang)) {
-                HStack(spacing: 8) {
-                    Slider(value: $settings.speechRate, in: 0.1...1.0, step: 0.05)
-                    Text(String(format: "%.2f", settings.speechRate))
-                        .monospacedDigit()
-                        .frame(width: 44, alignment: .trailing)
-                }
-            }
-            SettingsRow(label: L10n.speechVolume(lang)) {
-                HStack(spacing: 8) {
-                    Slider(value: $settings.speechVolume, in: 0...1, step: 0.05)
-                    Text("\(Int(settings.speechVolume * 100))%")
-                        .monospacedDigit()
-                        .frame(width: 44, alignment: .trailing)
-                }
-            }
-            SettingsRow(label: L10n.autoSpeak(lang)) {
-                Picker("", selection: $settings.autoSpeakPolicy) {
-                    ForEach(AutoSpeakPolicy.allCases, id: \.self) { policy in
-                        Text(policy.displayName(for: lang)).tag(policy)
-                    }
-                }
-                .labelsHidden()
-                .frame(maxWidth: 220)
+            if settings.speechEnabled, settings.translationTiming == .pause {
+                Text(L10n.autoSpeakTimingHint(lang))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 162)
             }
         }
     }
@@ -430,13 +458,6 @@ struct SettingsView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
-
-    private static var installedEnglishVoices: [AVSpeechSynthesisVoice] {
-        AVSpeechSynthesisVoice.speechVoices()
-            .filter { $0.language.hasPrefix("en-") }
-            .filter { !["en-US", "en-GB", "en-AU"].contains($0.identifier) }
-            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-    }
 }
 
 struct ExcludedAppRow: View {
@@ -470,9 +491,75 @@ struct ExcludedAppRow: View {
     }
 }
 
-@available(macOS 26.0, *)
+struct ShortcutRecorderButton: View {
+    let language: UILanguage
+    let shortcut: ReplaceShortcut
+    let onCommit: (ReplaceShortcut) -> Void
+    @State private var recording = false
+
+    var body: some View {
+        Button(recording ? L10n.shortcutRecording(language) : shortcut.displayString) {
+            recording = true
+        }
+        .background {
+            ShortcutKeyMonitor(isActive: $recording) { event in
+                if UInt32(event.keyCode) == ReplaceShortcut.escapeKeyCode {
+                    recording = false
+                    return
+                }
+                if let recorded = ReplaceShortcut.from(event: event) {
+                    onCommit(recorded)
+                    recording = false
+                }
+            }
+        }
+    }
+}
+
+private struct ShortcutKeyMonitor: NSViewRepresentable {
+    @Binding var isActive: Bool
+    var onKeyDown: (NSEvent) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        context.coordinator.install()
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.isActive = isActive
+        context.coordinator.onKeyDown = onKeyDown
+    }
+
+    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
+        coordinator.remove()
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    final class Coordinator {
+        var isActive = false
+        var onKeyDown: ((NSEvent) -> Void)?
+        private var monitor: Any?
+
+        func install() {
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                guard let self, self.isActive else { return event }
+                self.onKeyDown?(event)
+                return nil
+            }
+        }
+
+        func remove() {
+            if let monitor { NSEvent.removeMonitor(monitor) }
+            monitor = nil
+        }
+    }
+}
+
 struct LanguageResourceRow: View {
     let language: UILanguage
+    let holder: TranslationSessionHolder
 
     private enum PackState {
         case checking, installed, unsupported, available, downloading, failed
@@ -480,9 +567,6 @@ struct LanguageResourceRow: View {
 
     @State private var packState: PackState = .checking
     @State private var progressText = ""
-    @State private var configuration = TranslationSession.Configuration(
-        source: Locale.Language(identifier: "zh"), target: Locale.Language(identifier: "en"))
-    @State private var requested = false
 
     var body: some View {
         Group {
@@ -512,15 +596,17 @@ struct LanguageResourceRow: View {
             }
         }
         .task { await refreshAvailability() }
-        .translationTask(configuration) { session in
-            guard requested else { return }
+    }
+
+    private func startDownload() {
+        packState = .downloading
+        progressText = L10n.languagesPreparing(language)
+        Task {
             do {
-                try await session.prepareTranslation()
+                try await holder.prepareTranslation()
                 progressText = L10n.languagesDownloading(language)
-                let availability = LanguageAvailability()
                 for _ in 0..<120 {
-                    let state = await availability.status(
-                        from: Locale.Language(identifier: "zh"), to: Locale.Language(identifier: "en"))
+                    let state = await holder.languageAvailability()
                     if state == .installed {
                         packState = .installed
                         return
@@ -540,17 +626,8 @@ struct LanguageResourceRow: View {
         }
     }
 
-    private func startDownload() {
-        requested = true
-        packState = .downloading
-        progressText = L10n.languagesPreparing(language)
-        configuration.invalidate()
-    }
-
     private func refreshAvailability() async {
-        let availability = LanguageAvailability()
-        let state = await availability.status(
-            from: Locale.Language(identifier: "zh"), to: Locale.Language(identifier: "en"))
+        let state = await holder.languageAvailability()
         switch state {
         case .installed: packState = .installed
         case .unsupported: packState = .unsupported

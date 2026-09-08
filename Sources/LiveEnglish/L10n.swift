@@ -82,6 +82,21 @@ enum L10n {
     static func translationSpeed(_ lang: UILanguage) -> String {
         lang == .chinese ? "翻译速度" : "Translation Speed"
     }
+    static func translationTiming(_ lang: UILanguage) -> String {
+        lang == .chinese ? "翻译时机" : "Translation Timing"
+    }
+    static func timingPause(_ lang: UILanguage) -> String {
+        lang == .chinese ? "超时翻译" : "On Pause"
+    }
+    static func timingCompleteSentence(_ lang: UILanguage) -> String {
+        lang == .chinese ? "完整句子翻译" : "Complete Sentence"
+    }
+    static func timingShortcut(_ lang: UILanguage) -> String {
+        lang == .chinese ? "快捷键触发翻译" : "On Shortcut"
+    }
+    static func translateShortcut(_ lang: UILanguage) -> String {
+        lang == .chinese ? "翻译快捷键" : "Translate Shortcut"
+    }
     static func speedFast(_ lang: UILanguage) -> String {
         lang == .chinese ? "快速" : "Fast"
     }
@@ -118,32 +133,44 @@ enum L10n {
     static func languagesDownloadFailed(_ lang: UILanguage) -> String {
         lang == .chinese ? "语言下载未完成。" : "Language download was not completed."
     }
+    static func groupActions(_ lang: UILanguage) -> String {
+        lang == .chinese ? "快捷操作" : "Actions"
+    }
+    static func replaceOriginal(_ lang: UILanguage) -> String {
+        lang == .chinese ? "替换原文" : "Replace Original"
+    }
+    static func replaceShortcut(_ lang: UILanguage) -> String {
+        lang == .chinese ? "替换快捷键" : "Replace Shortcut"
+    }
+    static func copyTranslation(_ lang: UILanguage) -> String {
+        lang == .chinese ? "复制译文" : "Copy Translation"
+    }
+    static func copyShortcut(_ lang: UILanguage) -> String {
+        lang == .chinese ? "复制快捷键" : "Copy Shortcut"
+    }
+    static func shortcutRecording(_ lang: UILanguage) -> String {
+        lang == .chinese ? "按下快捷键…" : "Press a shortcut…"
+    }
+    static func replaceOriginalHint(_ lang: UILanguage) -> String {
+        lang == .chinese
+            ? "按下快捷键，把当前译文写回输入框。"
+            : "Press the shortcut to replace the field with the current translation."
+    }
+    static func copyTranslationHint(_ lang: UILanguage) -> String {
+        lang == .chinese
+            ? "按下快捷键把当前英文译文复制到剪贴板。"
+            : "Press the shortcut to copy the current English translation."
+    }
     static func groupSpeech(_ lang: UILanguage) -> String {
         lang == .chinese ? "朗读" : "Speech"
     }
     static func readTranslationsAloud(_ lang: UILanguage) -> String {
         lang == .chinese ? "朗读翻译结果" : "Read Translations Aloud"
     }
-    static func speechVoice(_ lang: UILanguage) -> String {
-        lang == .chinese ? "声音" : "Voice"
-    }
-    static func speechRate(_ lang: UILanguage) -> String {
-        lang == .chinese ? "语速" : "Speaking Rate"
-    }
-    static func speechVolume(_ lang: UILanguage) -> String {
-        lang == .chinese ? "音量" : "Volume"
-    }
-    static func autoSpeak(_ lang: UILanguage) -> String {
-        lang == .chinese ? "自动朗读" : "Auto Speak"
-    }
-    static func autoSpeakQuietOnly(_ lang: UILanguage) -> String {
-        lang == .chinese ? "仅在 Mac 安静时" : "Only when Mac is quiet"
-    }
-    static func autoSpeakAlways(_ lang: UILanguage) -> String {
-        lang == .chinese ? "总是" : "Always"
-    }
-    static func autoSpeakNever(_ lang: UILanguage) -> String {
-        lang == .chinese ? "从不" : "Never"
+    static func autoSpeakTimingHint(_ lang: UILanguage) -> String {
+        lang == .chinese
+            ? "超时翻译时不会朗读。请改用完整句子翻译或快捷键触发翻译。"
+            : "On Pause does not speak. Use Complete Sentence or On Shortcut to hear translations."
     }
 
     static func groupPosition(_ lang: UILanguage) -> String {
@@ -222,8 +249,24 @@ enum L10n {
     static func productName(_ lang: UILanguage) -> String {
         "浮译"
     }
-    static func version(_ lang: UILanguage) -> String {
-        lang == .chinese ? "版本 0.1.0" : "Version 0.1.0"
+    static func version(
+        _ lang: UILanguage,
+        marketing: String? = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+    ) -> String {
+        let value = marketing ?? ""
+        return lang == .chinese ? "版本 \(value)" : "Version \(value)"
+    }
+    static func checkForUpdates(_ lang: UILanguage) -> String {
+        lang == .chinese ? "检查更新" : "Check for Updates"
+    }
+    static func checkForUpdatesChecking(_ lang: UILanguage) -> String {
+        lang == .chinese ? "正在检查…" : "Checking…"
+    }
+    static func checkForUpdatesUpToDate(_ lang: UILanguage) -> String {
+        lang == .chinese ? "已是最新版本" : "You’re up to date"
+    }
+    static func checkForUpdatesFailed(_ lang: UILanguage) -> String {
+        lang == .chinese ? "检查更新失败" : "Couldn’t check for updates"
     }
     static func aboutBody(_ lang: UILanguage) -> String {
         lang == .chinese

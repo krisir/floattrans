@@ -45,6 +45,7 @@
 
         <nav class="nav" aria-label="Primary">
           <a href="#demo" data-i18n="navDemo">演示</a>
+          <a href="#whats-new" data-i18n="navWhatsNew">更新</a>
           <a href="#features" data-i18n="navFeatures">功能</a>
           <a href="#privacy" data-i18n="navPrivacy">隐私</a>
           <a href="#start" data-i18n="navStart">开始使用</a>
@@ -55,6 +56,22 @@
             <button type="button" data-set-lang="zh" aria-pressed="true">中文</button>
             <button type="button" data-set-lang="en" aria-pressed="false">EN</button>
           </div>
+          <a
+            class="btn btn-primary btn-compact"
+            href="https://github.com/krisir/floattrans/releases/download/v0.2.0/FloatTrans-0.2.0.dmg"
+          >
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M12 3v12m0 0-4-4m4 4 4-4M5 21h14"
+              />
+            </svg>
+            <span data-i18n="ctaDownload">下载 DMG</span>
+          </a>
           <a
             class="btn btn-ghost"
             href="https://github.com/krisir/floattrans"
@@ -86,11 +103,13 @@
               <span class="accent" data-i18n="heroTitle2">看见英文</span>
             </h1>
             <p class="lede" data-i18n="heroLede">
-              浮译会读取当前支持辅助功能的文本框，把正在输入的中文句子翻译成英文，并以低打扰的浮动框显示——无需复制、粘贴或快捷键。
+              浮译会读取当前支持辅助功能的文本框，把正在输入的中文句子翻译成英文，并以低打扰的浮动框显示。默认无需复制或粘贴；需要时可以打开「替换原文」（⌥⇧[）或「复制译文」（⌥⇧]）。
             </p>
             <div class="hero-cta">
-              <a class="btn btn-primary" href="#start">
-                <span data-i18n="ctaPrimary">开始使用</span>
+              <a
+                class="btn btn-primary"
+                href="https://github.com/krisir/floattrans/releases/download/v0.2.0/FloatTrans-0.2.0.dmg"
+              >
                 <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
                   <path
                     fill="none"
@@ -98,9 +117,10 @@
                     stroke-width="2"
                     stroke-linecap="round"
                     stroke-linejoin="round"
-                    d="M5 12h14M13 6l6 6-6 6"
+                    d="M12 3v12m0 0-4-4m4 4 4-4M5 21h14"
                   />
                 </svg>
+                <span data-i18n="ctaPrimary">下载 FloatTrans 0.2.0</span>
               </a>
               <a
                 class="btn btn-secondary"
@@ -112,6 +132,9 @@
                 查看源码
               </a>
             </div>
+            <p class="download-meta">
+              <span data-i18n="downloadMeta">macOS · v0.2.0 · FloatTrans-0.2.0.dmg</span>
+            </p>
             <ul class="hero-points" role="list">
               <li data-i18n="point1">实时按句翻译</li>
               <li data-i18n="point2">浮动字幕低打扰</li>
@@ -168,7 +191,7 @@
             <li>
               <span class="step-num">02</span>
               <h3 data-i18n="step2Title">本地翻译</h3>
-              <p data-i18n="step2Body">使用 macOS Translation 框架与本地语言模型，停顿约半秒后触发，避免输入法过程中频繁闪烁。</p>
+              <p data-i18n="step2Body">使用 macOS Translation 框架与本地语言模型。默认停顿后触发，也可改成打完标点再译，或按快捷键再译。</p>
             </li>
             <li>
               <span class="step-num">03</span>
@@ -176,6 +199,33 @@
               <p data-i18n="step3Body">英文以字幕式浮动框出现，不抢焦点、可手动关闭，支持位置、字号与自动隐藏。</p>
             </li>
           </ol>
+        </div>
+      </section>
+
+      <section id="whats-new" class="section">
+        <div class="container">
+          <div class="section-head">
+            <p class="eyebrow" data-i18n="whatsNewEyebrow">v0.2.0</p>
+            <h2 data-i18n="whatsNewTitle">这次更新了什么</h2>
+          </div>
+          <ul class="whats-new" role="list">
+            <li>
+              <h3 data-i18n="whats1Title">三种翻译时机</h3>
+              <p data-i18n="whats1Body">超时翻译、完整句子翻译，或快捷键触发（默认 ⌃⇧T）。翻译速度只影响超时模式。</p>
+            </li>
+            <li>
+              <h3 data-i18n="whats2Title">替换原文与复制译文</h3>
+              <p data-i18n="whats2Body">打开开关后，⌥⇧[ 把当前英文写回输入框，⌥⇧] 复制到剪贴板。快捷键可改。</p>
+            </li>
+            <li>
+              <h3 data-i18n="whats3Title">可选朗读</h3>
+              <p data-i18n="whats3Body">朗读翻译结果。超时翻译时不会出声，请改用完整句子或快捷键。</p>
+            </li>
+            <li>
+              <h3 data-i18n="whats4Title">检查更新</h3>
+              <p data-i18n="whats4Body">设置 → 关于对照 GitHub Releases。有新版本就打开对应发布页。</p>
+            </li>
+          </ul>
         </div>
       </section>
 
@@ -216,7 +266,7 @@
                 </svg>
               </div>
               <h3 data-i18n="feat2Title">可调 Overlay</h3>
-              <p data-i18n="feat2Body">右上角、底部居中、右下角；边距、字号、自动隐藏 3–60 秒或永不隐藏。</p>
+              <p data-i18n="feat2Body">右上角、底部居中、右下角；边距、字号、自动隐藏 5–60 秒或永不隐藏。</p>
             </article>
             <article class="card">
               <div class="card-icon" aria-hidden="true">
@@ -295,11 +345,34 @@
             <h2 data-i18n="startTitle">安装与首次设置</h2>
           </div>
 
+          <div class="download-panel">
+            <div>
+              <h3 data-i18n="downloadTitle">下载安装包</h3>
+              <p data-i18n="downloadBody">打开 DMG，把 FloatTrans.app 拖进 Applications。当前为 ad-hoc 签名、未经公证，首次打开请右键 → 打开。</p>
+            </div>
+            <a
+              class="btn btn-primary"
+              href="https://github.com/krisir/floattrans/releases/download/v0.2.0/FloatTrans-0.2.0.dmg"
+            >
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M12 3v12m0 0-4-4m4 4 4-4M5 21h14"
+                />
+              </svg>
+              <span data-i18n="ctaDownloadDmg">下载 FloatTrans-0.2.0.dmg</span>
+            </a>
+          </div>
+
           <div class="start-grid">
             <div class="card requirements">
               <h3 data-i18n="reqTitle">系统要求</h3>
               <ul>
-                <li data-i18n="req1">macOS 26 或更高版本</li>
+                <li data-i18n="req1">macOS 15 或更高版本</li>
                 <li data-i18n="req2">Accessibility（辅助功能）权限</li>
                 <li data-i18n="req3">中文 → 英文 Translation 语言包</li>
               </ul>
@@ -323,12 +396,28 @@ open FloatTrans.app</code></pre>
           <ol class="setup-steps">
             <li data-i18n="setup1">启动后在引导页打开辅助功能设置并授权。</li>
             <li data-i18n="setup2">在设置中安装中文 → 英文语言包并等待下载完成。</li>
-            <li data-i18n="setup3">在 TextEdit、浏览器等支持辅助功能的输入框中输入中文，停下片刻即可看到英文浮动框。</li>
+            <li data-i18n="setup3">在 TextEdit、浏览器等支持辅助功能的输入框中输入中文。默认停下片刻即可看到英文浮动框；也可改成完整句子或快捷键触发。</li>
           </ol>
 
           <div class="bottom-cta">
             <a
               class="btn btn-primary"
+              href="https://github.com/krisir/floattrans/releases/download/v0.2.0/FloatTrans-0.2.0.dmg"
+            >
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M12 3v12m0 0-4-4m4 4 4-4M5 21h14"
+                />
+              </svg>
+              <span data-i18n="ctaPrimary">下载 FloatTrans 0.2.0</span>
+            </a>
+            <a
+              class="btn btn-secondary"
               href="https://github.com/krisir/floattrans"
               target="_blank"
               rel="noopener noreferrer"
@@ -340,15 +429,6 @@ open FloatTrans.app</code></pre>
                 />
               </svg>
               <span data-i18n="ctaRepo">打开 GitHub 仓库</span>
-            </a>
-            <a
-              class="btn btn-secondary"
-              href="https://github.com/krisir/floattrans#readme"
-              target="_blank"
-              rel="noopener noreferrer"
-              data-i18n="ctaReadme"
-            >
-              阅读完整文档
             </a>
           </div>
         </div>
