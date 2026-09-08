@@ -89,6 +89,47 @@ enum TranslationTiming: String, CaseIterable, Sendable {
     }
 }
 
+/// The translation events that may trigger text-to-speech. Unlike the
+/// translation timing itself, users may select more than one event.
+enum SpeechTrigger: Int, CaseIterable, Identifiable, Sendable {
+    case pause = 1
+    case completeSentence = 2
+    case shortcut = 4
+
+    var id: Int { rawValue }
+
+    var translationTiming: TranslationTiming {
+        switch self {
+        case .pause: return .pause
+        case .completeSentence: return .completeSentence
+        case .shortcut: return .shortcut
+        }
+    }
+}
+
+struct SpeechTriggerSelection: OptionSet, Codable, Equatable, Sendable {
+    let rawValue: Int
+
+    static let pause = SpeechTriggerSelection(rawValue: SpeechTrigger.pause.rawValue)
+    static let completeSentence = SpeechTriggerSelection(rawValue: SpeechTrigger.completeSentence.rawValue)
+    static let shortcut = SpeechTriggerSelection(rawValue: SpeechTrigger.shortcut.rawValue)
+    static let all: SpeechTriggerSelection = [.pause, .completeSentence, .shortcut]
+
+    init(rawValue: Int) { self.rawValue = rawValue }
+
+    init(timing: TranslationTiming) {
+        switch timing {
+        case .pause: self = .pause
+        case .completeSentence: self = .completeSentence
+        case .shortcut: self = .shortcut
+        }
+    }
+
+    static func normalized(rawValue: Int) -> SpeechTriggerSelection {
+        SpeechTriggerSelection(rawValue: rawValue & SpeechTriggerSelection.all.rawValue)
+    }
+}
+
 struct ReplaceShortcut: Equatable, Sendable {
     var keyCode: UInt32
     var carbonModifiers: UInt32
@@ -234,10 +275,37 @@ struct ReplaceShortcut: Equatable, Sendable {
             defaults.set(translationSpeed, forKey: "translationSpeed")
         }
     }
+    @Published var historyRetention: HistoryRetention {
+        didSet {
+            defaults.set(historyRetention.rawValue, forKey: "historyRetention")
+            onHistoryRetentionChanged?()
+        }
+    }
     @Published var translationTiming: TranslationTiming {
         didSet { defaults.set(translationTiming.rawValue, forKey: "translationTiming") }
     }
-    @Published var speechEnabled: Bool { didSet { defaults.set(speechEnabled, forKey: "speechEnabled") } }
+    @Published var speechEnabled: Bool {
+        didSet {
+            defaults.set(speechEnabled, forKey: "speechEnabled")
+            if speechEnabled, speechTriggers.isEmpty {
+                speechTriggers = .all
+            } else if !speechEnabled, !speechTriggers.isEmpty {
+                speechTriggers = []
+            }
+        }
+    }
+    @Published var speechTriggers: SpeechTriggerSelection {
+        didSet {
+            let normalized = SpeechTriggerSelection.normalized(rawValue: speechTriggers.rawValue)
+            if speechTriggers != normalized {
+                speechTriggers = normalized
+                return
+            }
+            defaults.set(speechTriggers.rawValue, forKey: "speechTriggers")
+            let enabled = !speechTriggers.isEmpty
+            if speechEnabled != enabled { speechEnabled = enabled }
+        }
+    }
     @Published var replaceOriginal: Bool { didSet { defaults.set(replaceOriginal, forKey: "replaceOriginal") } }
     @Published var copyTranslation: Bool { didSet { defaults.set(copyTranslation, forKey: "copyTranslation") } }
     @Published var replaceShortcut: ReplaceShortcut {
@@ -257,6 +325,9 @@ struct ReplaceShortcut: Equatable, Sendable {
     }
     /// Assigned by AppState after its translation pipeline has been built.
     var onTranslationSettingsChanged: (() -> Void)?
+    /// Reloads and immediately prunes local history after the user shortens
+    /// the selected retention period.
+    var onHistoryRetentionChanged: (() -> Void)?
     private let defaults = UserDefaults.standard
 
     init() {
@@ -290,10 +361,21 @@ struct ReplaceShortcut: Equatable, Sendable {
         let speedValue = TranslationSpeed(rawValue: defaults.object(forKey: "translationSpeed") as? Int ?? 450)?.rawValue
             ?? TranslationSpeed.balanced.rawValue
         translationSpeed = speedValue
+        historyRetention = HistoryRetention(rawValue: defaults.string(forKey: "historyRetention") ?? "") ?? .sevenDays
         translationTiming =
             TranslationTiming(rawValue: defaults.string(forKey: "translationTiming") ?? TranslationTiming.pause.rawValue)
             ?? .pause
-        speechEnabled = defaults.object(forKey: "speechEnabled") as? Bool ?? false
+        let legacySpeechEnabled = defaults.object(forKey: "speechEnabled") as? Bool ?? false
+        let initialSpeechTriggers: SpeechTriggerSelection
+        if let storedSpeechTriggers = defaults.object(forKey: "speechTriggers") as? Int {
+            initialSpeechTriggers = SpeechTriggerSelection.normalized(rawValue: storedSpeechTriggers)
+        } else {
+            // Preserve the old behavior for existing users: it only spoke
+            // completed sentences and shortcut-triggered translations.
+            initialSpeechTriggers = legacySpeechEnabled ? [.completeSentence, .shortcut] : []
+        }
+        speechTriggers = initialSpeechTriggers
+        speechEnabled = !initialSpeechTriggers.isEmpty
         replaceOriginal = defaults.object(forKey: "replaceOriginal") as? Bool ?? false
         copyTranslation = defaults.object(forKey: "copyTranslation") as? Bool ?? false
         replaceShortcut = Self.loadShortcut(
@@ -314,6 +396,9 @@ struct ReplaceShortcut: Equatable, Sendable {
         if defaults.object(forKey: "translationSpeed") == nil {
             defaults.set(speedValue, forKey: "translationSpeed")
         }
+        if defaults.object(forKey: "historyRetention") == nil {
+            defaults.set(historyRetention.rawValue, forKey: "historyRetention")
+        }
         if defaults.object(forKey: "sourceLanguage") == nil { defaults.set(sourceLanguage.rawValue, forKey: "sourceLanguage") }
         if defaults.object(forKey: "targetLanguage") == nil { defaults.set(targetLanguage.rawValue, forKey: "targetLanguage") }
         if defaults.object(forKey: "translationBackend") == nil {
@@ -321,6 +406,12 @@ struct ReplaceShortcut: Equatable, Sendable {
         }
         if defaults.object(forKey: "llmFallbackTimeout") == nil {
             defaults.set(llmFallbackTimeout, forKey: "llmFallbackTimeout")
+        }
+        if defaults.object(forKey: "speechTriggers") == nil {
+            defaults.set(speechTriggers.rawValue, forKey: "speechTriggers")
+        }
+        if defaults.object(forKey: "speechEnabled") == nil {
+            defaults.set(speechEnabled, forKey: "speechEnabled")
         }
         migrateLegacyAPIKeysToKeychain()
     }

@@ -59,6 +59,7 @@ struct MenuBarMenu: View {
     let translationService: TranslationService
     let coordinator: TranslationCoordinator
     let translationHolder: TranslationSessionHolder
+    let history: TranslationHistoryController
     let overlay = OverlayCoordinator()
     let speech: SpeechPerforming
     private let speechPolicy = SpeechPolicyEvaluator()
@@ -82,6 +83,7 @@ struct MenuBarMenu: View {
             backend: store.translationBackend,
             models: store.llmModels,
             timeoutSeconds: store.llmFallbackTimeout)
+        let historyController = TranslationHistoryController()
         settings = store
         enabled = enabledValue
         permissionGranted = trustedValue
@@ -91,6 +93,7 @@ struct MenuBarMenu: View {
         translationService = service
         coordinator = TranslationCoordinator(
             engine: service, sourceLanguage: store.sourceLanguage, targetLanguage: store.targetLanguage)
+        history = historyController
         speech = SpeechService()
         NSLog("LiveEnglish startup trusted=%@ enabled=%@", String(trustedValue), String(enabledValue))
         DiagnosticLog.write("startup trusted=\(trustedValue) enabled=\(enabledValue)")
@@ -113,6 +116,10 @@ struct MenuBarMenu: View {
         monitor.excludedBundleIDs = settings.excludedBundleIDs
         monitor.sourceLanguage = settings.sourceLanguage
         settings.onTranslationSettingsChanged = { [weak self] in self?.applyTranslationSettings() }
+        settings.onHistoryRetentionChanged = { [weak self] in
+            guard let self else { return }
+            self.history.reload(retention: self.settings.historyRetention)
+        }
         input.onSentence = { [weak self] text, sentenceKey, session, screen, snapshot in
             self?.translate(text, sentenceKey: sentenceKey, session: session, screen: screen, snapshot: snapshot)
         }
@@ -150,6 +157,7 @@ struct MenuBarMenu: View {
         }
         refreshHotKeys()
         applyTranslationSettings()
+        history.reload(retention: settings.historyRetention)
         if showWelcome {
             Task { @MainActor [weak self] in
                 try? await Task.sleep(for: .milliseconds(250))
@@ -226,14 +234,14 @@ struct MenuBarMenu: View {
             return
         }
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 760, height: 700),
+            contentRect: NSRect(x: 0, y: 0, width: 840, height: 700),
             styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         window.title = L10n.settingsWindowTitle(settings.uiLanguage)
         let hosting = NSHostingView(rootView: SettingsView(state: self))
         hosting.sizingOptions = .minSize
         window.contentView = hosting
-        window.contentMinSize = NSSize(width: 680, height: 520)
-        window.setContentSize(NSSize(width: 760, height: 700))
+        window.contentMinSize = NSSize(width: 760, height: 520)
+        window.setContentSize(NSSize(width: 840, height: 700))
         window.center()
         window.isReleasedWhenClosed = false
         window.orderFrontRegardless()
@@ -260,6 +268,8 @@ struct MenuBarMenu: View {
     private func translate(
         _ text: String, sentenceKey: String, session: InputSessionID, screen: NSScreen?, snapshot: TextSnapshot
     ) {
+        let sourceLanguage = settings.sourceLanguage
+        let targetLanguage = settings.targetLanguage
         currentSession = session
         let previous = pendingAction
         let sameSentence = previous?.sentenceKey == sentenceKey && previous?.session == session
@@ -287,12 +297,25 @@ struct MenuBarMenu: View {
                 return
             }
             await MainActor.run {
-                self?.acceptTranslationResult(result, key: sentenceKey, session: session, screen: screen)
+                self?.acceptTranslationResult(
+                    result,
+                    sourceText: text,
+                    sourceLanguage: sourceLanguage,
+                    targetLanguage: targetLanguage,
+                    key: sentenceKey,
+                    session: session,
+                    screen: screen)
             }
         }
     }
     private func acceptTranslationResult(
-        _ result: String, key sentenceKey: String, session: InputSessionID, screen: NSScreen?
+        _ result: String,
+        sourceText: String,
+        sourceLanguage: Language,
+        targetLanguage: Language,
+        key sentenceKey: String,
+        session: InputSessionID,
+        screen: NSScreen?
     ) {
         guard currentSession == session, enabled else {
             DiagnosticLog.write("translation discarded stale session")
@@ -306,6 +329,12 @@ struct MenuBarMenu: View {
             pendingAction = PendingTranslationAction(
                 text: result, sourceWithTerminator: nil, session: session, sentenceKey: sentenceKey)
         }
+        history.record(
+            sourceText: sourceText,
+            translatedText: result,
+            sourceLanguage: sourceLanguage,
+            targetLanguage: targetLanguage,
+            retention: settings.historyRetention)
         DiagnosticLog.write("translation result accepted length=\(result.count)")
         logger.info("translation result accepted length=\(result.count, privacy: .public)")
         overlay.show(result, key: sentenceKey, on: screen)
@@ -315,13 +344,15 @@ struct MenuBarMenu: View {
     }
     private func speakIfAllowed(_ text: String) {
         guard speechPolicy.shouldSpeak(
-            speechEnabled: settings.speechEnabled, translationTiming: settings.translationTiming)
+            speechEnabled: settings.speechEnabled,
+            speechTriggers: settings.speechTriggers,
+            translationTiming: settings.translationTiming)
         else {
             DiagnosticLog.write("speech skipped")
             return
         }
         DiagnosticLog.write("speech speaking length=\(text.count)")
-        speech.speak(text)
+        speech.speak(text, language: settings.targetLanguage)
     }
     func setReplaceOriginal(_ enabled: Bool) {
         settings.replaceOriginal = enabled

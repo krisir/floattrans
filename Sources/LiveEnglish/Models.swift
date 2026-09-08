@@ -18,6 +18,22 @@ public enum Language: String, CaseIterable, Codable, Hashable, Identifiable, Sen
     public var id: String { rawValue }
     public var locale: Locale.Language { Locale.Language(identifier: rawValue) }
 
+    /// The preferred macOS speech locale for translated text in this language.
+    /// AVSpeechSynthesisVoice uses this to select the system's matching
+    /// default voice rather than always speaking with an English voice.
+    public var speechLocaleIdentifier: String {
+        switch self {
+        case .chinese: return "zh-CN"
+        case .english: return "en-US"
+        case .japanese: return "ja-JP"
+        case .russian: return "ru-RU"
+        case .korean: return "ko-KR"
+        case .french: return "fr-FR"
+        case .german: return "de-DE"
+        case .spanish: return "es-ES"
+        }
+    }
+
     public var englishName: String {
         switch self {
         case .chinese: return "Chinese"
