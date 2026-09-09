@@ -15,7 +15,14 @@ protocol AudioContextDetecting: Sendable {
 
 @MainActor protocol SpeechPerforming: AnyObject {
     func speak(_ text: String, language: Language)
+    func speak(_ text: String, language: Language, voiceIdentifier: String?)
     func stop()
+}
+
+extension SpeechPerforming {
+    func speak(_ text: String, language: Language) {
+        speak(text, language: language, voiceIdentifier: nil)
+    }
 }
 
 struct SpeechPolicyEvaluator: Sendable {
@@ -37,10 +44,14 @@ struct SpeechPolicyEvaluator: Sendable {
     }
 
     func speak(_ text: String, language: Language) {
+        speak(text, language: language, voiceIdentifier: nil)
+    }
+
+    func speak(_ text: String, language: Language, voiceIdentifier: String?) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         let synthesizer = synthesizer
-        let voice = systemVoice(for: language)
+        let voice = preferredVoice(for: language, override: voiceIdentifier)
         // Leave the Swift Task so AXCoreUtilities does not unsafeForcedSync from a concurrent job.
         DispatchQueue.main.async {
             synthesizer.stopSpeaking(at: .immediate)
@@ -52,16 +63,22 @@ struct SpeechPolicyEvaluator: Sendable {
         }
     }
 
-    /// Prefer macOS's default voice for the selected target language. If its
-    /// exact regional variant is not installed, use another installed voice
-    /// for that language before allowing AVFoundation to choose a fallback.
+    /// Prefer an explicitly selected or user-entered voice, then use macOS's
+    /// default voice for the target language. Invalid custom values safely
+    /// fall back to the system voice instead of speaking the wrong language.
+    private func preferredVoice(for language: Language, override: String?) -> AVSpeechSynthesisVoice? {
+        if let override, let voice = SpeechVoiceCatalog.voice(matching: override, for: language) {
+            return voice
+        }
+        return systemVoice(for: language)
+    }
+
     private func systemVoice(for language: Language) -> AVSpeechSynthesisVoice? {
         if let defaultVoice = AVSpeechSynthesisVoice(language: language.speechLocaleIdentifier) {
             return defaultVoice
         }
-        let languagePrefix = language.rawValue + "-"
-        return AVSpeechSynthesisVoice.speechVoices().first {
-            $0.language == language.rawValue || $0.language.hasPrefix(languagePrefix)
+        return SpeechVoiceCatalog.options(for: language).first.flatMap {
+            AVSpeechSynthesisVoice(identifier: $0.identifier)
         }
     }
 
@@ -70,6 +87,132 @@ struct SpeechPolicyEvaluator: Sendable {
         DispatchQueue.main.async {
             synthesizer.stopSpeaking(at: .immediate)
         }
+    }
+}
+
+enum SpeechVoiceQuality: String, Sendable {
+    case standard
+    case enhanced
+    case premium
+
+    var sortRank: Int {
+        switch self {
+        case .premium: return 0
+        case .enhanced: return 1
+        case .standard: return 2
+        }
+    }
+
+    func displayName(for language: UILanguage) -> String {
+        switch self {
+        case .standard: return language == .chinese ? "标准音质" : "Standard"
+        case .enhanced: return language == .chinese ? "优化音质" : "Enhanced"
+        case .premium: return language == .chinese ? "高音质" : "Premium"
+        }
+    }
+}
+
+struct SpeechVoiceOption: Identifiable, Hashable, Sendable {
+    let identifier: String
+    let name: String
+    let languageIdentifier: String
+    let quality: SpeechVoiceQuality
+
+    var id: String { identifier }
+
+    func displayName(for language: UILanguage) -> String {
+        "\(SpeechVoiceCatalog.localizedName(for: self, language: language)) · \(languageIdentifier) (\(quality.displayName(for: language)))"
+    }
+}
+
+enum SpeechVoiceCatalog {
+    static func options(for language: Language) -> [SpeechVoiceOption] {
+        AVSpeechSynthesisVoice.speechVoices()
+            .filter { matches($0, language: language) }
+            .map {
+                let quality: SpeechVoiceQuality
+                switch $0.quality {
+                case .premium: quality = .premium
+                case .enhanced: quality = .enhanced
+                default: quality = .standard
+                }
+                return SpeechVoiceOption(
+                    identifier: $0.identifier,
+                    name: $0.name,
+                    languageIdentifier: $0.language,
+                    quality: quality)
+            }
+            .sorted {
+                if $0.quality != $1.quality { return $0.quality.sortRank < $1.quality.sortRank }
+                return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+            }
+    }
+
+    static func voice(matching value: String, for language: Language) -> AVSpeechSynthesisVoice? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let voices = AVSpeechSynthesisVoice.speechVoices().filter { matches($0, language: language) }
+        if let voice = voices.first(where: { $0.identifier.caseInsensitiveCompare(trimmed) == .orderedSame }) {
+            return voice
+        }
+        let normalized = normalizedName(trimmed)
+        return voices
+            .filter {
+                normalizedName($0.name) == normalized
+                    || normalizedName(localizedName(for: $0)) == normalized
+            }
+            .sorted { qualityRank($0) < qualityRank($1) }
+            .first
+    }
+
+    static func localizedName(for option: SpeechVoiceOption, language: UILanguage) -> String {
+        if language == .chinese,
+           option.identifier.caseInsensitiveCompare("com.apple.voice.premium.zh-CN.Lilian") == .orderedSame {
+            return "黎潋"
+        }
+        return baseDisplayName(option.name)
+    }
+
+    private static func localizedName(for voice: AVSpeechSynthesisVoice) -> String {
+        if voice.identifier.caseInsensitiveCompare("com.apple.voice.premium.zh-CN.Lilian") == .orderedSame {
+            return "黎潋"
+        }
+        return voice.name
+    }
+
+    private static func normalizedName(_ value: String, removeQualitySuffix: Bool = true) -> String {
+        var result = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard removeQualitySuffix else { return result }
+        let suffixes = ["(premium)", "(enhanced)", "(standard)", "（高音质）", "（优化音质）", "（标准音质）"]
+        for suffix in suffixes where result.hasSuffix(suffix) {
+            result.removeLast(suffix.count)
+            break
+        }
+        return result.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func baseDisplayName(_ value: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lowercased = trimmed.lowercased()
+        let suffixes = [" (premium)", " (enhanced)", " (standard)", "（高音质）", "（优化音质）", "（标准音质）"]
+        for suffix in suffixes where lowercased.hasSuffix(suffix) {
+            return String(trimmed.dropLast(suffix.count)).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return trimmed
+    }
+
+    private static func qualityRank(_ voice: AVSpeechSynthesisVoice) -> Int {
+        switch voice.quality {
+        case .premium: return 0
+        case .enhanced: return 1
+        default: return 2
+        }
+    }
+
+    static func matches(_ voice: AVSpeechSynthesisVoice, language: Language) -> Bool {
+        let identifier = voice.language.replacingOccurrences(of: "_", with: "-").lowercased()
+        let base = identifier.split(separator: "-").first.map(String.init) ?? identifier
+        return base == language.rawValue.lowercased()
     }
 }
 

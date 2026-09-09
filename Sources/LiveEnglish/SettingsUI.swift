@@ -421,6 +421,14 @@ struct SettingsView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .padding(.leading, 184)
+            SettingsGroupHeader(title: L10n.speechVoices(lang))
+            Text(L10n.speechVoicesHint(lang))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.leading, 184)
+            ForEach(Language.allCases) { language in
+                SpeechVoiceSettingsRow(language: language, settings: settings, speech: state.speech, uiLanguage: lang)
+            }
         }
     }
 
@@ -793,6 +801,73 @@ struct SettingsView: View {
         }
         .background(Color(nsColor: .windowBackgroundColor).opacity(0.72))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+private struct SpeechVoiceSettingsRow: View {
+    let language: Language
+    @ObservedObject var settings: SettingsStore
+    let speech: SpeechPerforming
+    let uiLanguage: UILanguage
+    @State private var options: [SpeechVoiceOption] = []
+
+    private var selectedIdentifier: Binding<String> {
+        Binding(
+            get: { settings.speechVoiceIdentifier(for: language) },
+            set: {
+                settings.setSpeechVoiceIdentifier($0, for: language)
+                settings.setSpeechCustomVoiceName("", for: language)
+            })
+    }
+
+    private var customName: Binding<String> {
+        Binding(
+            get: { settings.speechCustomVoiceName(for: language) },
+            set: {
+                settings.setSpeechCustomVoiceName($0, for: language)
+                if !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    settings.setSpeechVoiceIdentifier("", for: language)
+                }
+            })
+    }
+
+    var body: some View {
+        SettingsRow(label: languageName) {
+            VStack(alignment: .leading, spacing: 7) {
+                HStack(spacing: 8) {
+                    Picker("", selection: selectedIdentifier) {
+                        Text(L10n.speechSystemDefault(uiLanguage)).tag("")
+                        if options.isEmpty {
+                            Text(L10n.speechNoVoices(uiLanguage)).tag("")
+                        } else {
+                            ForEach(options) { option in
+                                Text(option.displayName(for: uiLanguage)).tag(option.identifier)
+                            }
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(minWidth: 280, maxWidth: 380)
+                    Button {
+                        let chosen = settings.configuredSpeechVoice(for: language)
+                        speech.speak(L10n.speechTestText(language, uiLanguage), language: language, voiceIdentifier: chosen)
+                    } label: {
+                        Label(L10n.speechTest(uiLanguage), systemImage: "play.circle")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+                TextField(L10n.speechCustomVoice(uiLanguage), text: customName)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(minWidth: 280, maxWidth: 380)
+            }
+        }
+        .task(id: language.rawValue) {
+            options = SpeechVoiceCatalog.options(for: language)
+        }
+    }
+
+    private var languageName: String {
+        uiLanguage == .chinese ? language.chineseName : language.englishName
     }
 }
 

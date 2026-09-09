@@ -6,8 +6,8 @@ import XCTest
 final class SettingsStoreTests: XCTestCase {
     private let keys = [
         "enabled", "hideAfter", "neverHide", "launchAtLogin", "textSize", "overlayPosition", "overlayEdgeDistance",
-        "overlayBehavior", "uiLanguage", "translationSpeed", "speechEnabled", "speechTriggers", "speechVoiceIdentifier", "speechRate",
-        "speechVolume", "autoSpeakPolicy", "excludedBundleIDs", "replaceOriginal", "copyTranslation",
+        "overlayBehavior", "uiLanguage", "translationSpeed", "speechEnabled", "speechTriggers", "speechVoiceIdentifier", "speechVoiceIdentifiers",
+        "speechCustomVoiceNames", "speechRate", "speechVolume", "autoSpeakPolicy", "excludedBundleIDs", "replaceOriginal", "copyTranslation",
         "replaceShortcutKeyCode", "replaceShortcutModifiers", "copyShortcutKeyCode", "copyShortcutModifiers",
         "translationTiming", "translateShortcutKeyCode", "translateShortcutModifiers",
         "sourceLanguage", "targetLanguage", "translationBackend", "llmModels", "llmFallbackTimeout", "historyRetention",
@@ -315,6 +315,34 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(store.copyShortcut, .optionShiftRightBracket)
         XCTAssertEqual(store.translationTiming, .pause)
         XCTAssertEqual(store.translateShortcut, .controlShiftT)
+    }
+
+    func testSpeechVoicesPersistIndependentlyForEachLanguage() {
+        let defaults = UserDefaults.standard
+        let saved = snapshot(defaults)
+        defer { restore(defaults, saved) }
+
+        for key in keys { defaults.removeObject(forKey: key) }
+        defaults.set(false, forKey: "launchAtLogin")
+
+        let store = SettingsStore()
+        XCTAssertNil(store.configuredSpeechVoice(for: .chinese))
+
+        store.setSpeechVoiceIdentifier("com.apple.voice.enhanced.en-US.Zoe", for: .english)
+        store.setSpeechVoiceIdentifier("com.apple.voice.enhanced.zh-CN.Lilian", for: .chinese)
+        store.setSpeechCustomVoiceName("Milena", for: .russian)
+
+        let reloaded = SettingsStore()
+        XCTAssertEqual(reloaded.configuredSpeechVoice(for: .english), "com.apple.voice.enhanced.en-US.Zoe")
+        XCTAssertEqual(reloaded.configuredSpeechVoice(for: .chinese), "com.apple.voice.enhanced.zh-CN.Lilian")
+        XCTAssertEqual(reloaded.configuredSpeechVoice(for: .russian), "Milena")
+        XCTAssertNil(reloaded.configuredSpeechVoice(for: .japanese))
+
+        reloaded.setSpeechVoiceIdentifier("catalog-japanese", for: .japanese)
+        reloaded.setSpeechCustomVoiceName("Custom Japanese", for: .japanese)
+        XCTAssertEqual(reloaded.configuredSpeechVoice(for: .japanese), "Custom Japanese")
+        reloaded.setSpeechCustomVoiceName("", for: .japanese)
+        XCTAssertEqual(reloaded.configuredSpeechVoice(for: .japanese), "catalog-japanese")
     }
 
     private func snapshot(_ defaults: UserDefaults) -> [String: Any?] {

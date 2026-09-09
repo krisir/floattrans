@@ -352,7 +352,10 @@ struct MenuBarMenu: View {
             return
         }
         DiagnosticLog.write("speech speaking length=\(text.count)")
-        speech.speak(text, language: settings.targetLanguage)
+        speech.speak(
+            text,
+            language: settings.targetLanguage,
+            voiceIdentifier: settings.configuredSpeechVoice(for: settings.targetLanguage))
     }
     func setReplaceOriginal(_ enabled: Bool) {
         settings.replaceOriginal = enabled
