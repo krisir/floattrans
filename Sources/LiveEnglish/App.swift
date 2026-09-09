@@ -43,6 +43,14 @@ struct MenuBarMenu: View {
     func applicationDidFinishLaunching(_ notification: Notification) {
         state.startTranslationHost()
     }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        state.handleReopen()
+        return true
+    }
+
+    // Chrome windows keep Dock / Cmd+Tab presence after the user switches apps.
+    // Do not set `.accessory` from resign-active; overlay and the translation host never count.
 }
 
 @MainActor final class AppState: ObservableObject {
@@ -68,6 +76,7 @@ struct MenuBarMenu: View {
     private var pendingAction: PendingTranslationAction?
     private var welcomeWindow: NSWindow?
     private var settingsWindow: NSWindow?
+    private let chromeObserver = ChromeWindowObserver()
     private var permissionPoll: Task<Void, Never>?
     private var translationHostWindow: TranslationHostWindowController?
     init() {
@@ -158,6 +167,8 @@ struct MenuBarMenu: View {
         refreshHotKeys()
         applyTranslationSettings()
         history.reload(retention: settings.historyRetention)
+        chromeObserver.onClose = { [weak self] window in self?.syncChromePresence(excluding: window) }
+        chromeObserver.onMiniaturizeChange = { [weak self] in self?.syncChromePresence() }
         if showWelcome {
             Task { @MainActor [weak self] in
                 try? await Task.sleep(for: .milliseconds(250))
@@ -224,13 +235,12 @@ struct MenuBarMenu: View {
         showWelcome = false
         welcomeWindow?.close()
         welcomeWindow = nil
+        syncChromePresence()
     }
     func presentSettings() {
         if let settingsWindow {
             updateSettingsWindowTitle()
-            settingsWindow.orderFrontRegardless()
-            settingsWindow.makeKey()
-            NSApp.activate(ignoringOtherApps: true)
+            AppPresence.reveal(settingsWindow)
             return
         }
         let window = NSWindow(
@@ -244,10 +254,18 @@ struct MenuBarMenu: View {
         window.setContentSize(NSSize(width: 840, height: 700))
         window.center()
         window.isReleasedWhenClosed = false
-        window.orderFrontRegardless()
-        window.makeKey()
-        NSApp.activate(ignoringOtherApps: true)
+        window.delegate = chromeObserver
         settingsWindow = window
+        AppPresence.reveal(window)
+    }
+    func handleReopen() {
+        guard let window = AppPresence.windowToReopen(settings: settingsWindow, welcome: welcomeWindow) else { return }
+        if window === settingsWindow { updateSettingsWindowTitle() }
+        AppPresence.reveal(window)
+    }
+    private func syncChromePresence(excluding closing: NSWindow? = nil) {
+        AppPresence.apply(
+            AppPresence.activationPolicy(settings: settingsWindow, welcome: welcomeWindow, closing: closing))
     }
     func updateSettingsWindowTitle() {
         settingsWindow?.title = L10n.settingsWindowTitle(settings.uiLanguage)
@@ -261,9 +279,9 @@ struct MenuBarMenu: View {
         window.contentView = NSHostingView(rootView: WelcomeView(state: self))
         window.center()
         window.isReleasedWhenClosed = false
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        window.delegate = chromeObserver
         welcomeWindow = window
+        AppPresence.reveal(window)
     }
     private func translate(
         _ text: String, sentenceKey: String, session: InputSessionID, screen: NSScreen?, snapshot: TextSnapshot

@@ -26,10 +26,10 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(L10n.groupSpeech(.english), "Speech")
         XCTAssertEqual(L10n.readTranslationsAloud(.chinese), "朗读翻译结果")
         XCTAssertEqual(L10n.readTranslationsAloud(.english), "Read Translations Aloud")
-        XCTAssertEqual(L10n.speechTimingAll(.chinese), "全部时机")
+        XCTAssertEqual(L10n.speechTimingAll(.chinese), "完整句子和快捷键")
         XCTAssertEqual(L10n.speechTimingPause(.english), "On Pause")
-        XCTAssertEqual(L10n.speechTimingSummary([.pause, .shortcut], .chinese), "超时翻译、快捷键触发翻译")
-        XCTAssertEqual(L10n.speechTimingSummary(.all, .english), "All Translation Events")
+        XCTAssertEqual(L10n.speechTimingSummary([.pause, .shortcut], .chinese), "快捷键触发翻译")
+        XCTAssertEqual(L10n.speechTimingSummary(.all, .english), "Complete Sentence and Shortcut")
         XCTAssertEqual(L10n.speechVoiceHint(.russian, .chinese), "朗读会使用此 Mac 上俄语的默认系统语音。")
         XCTAssertEqual(L10n.replaceOriginal(.chinese), "替换原文")
         XCTAssertEqual(L10n.replaceOriginal(.english), "Replace Original")
@@ -66,6 +66,20 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(L10n.checkForUpdatesChecking(.english), "Checking…")
         XCTAssertEqual(L10n.checkForUpdatesUpToDate(.chinese), "已是最新版本")
         XCTAssertEqual(L10n.checkForUpdatesUpToDate(.english), "You’re up to date")
+        XCTAssertEqual(L10n.historyRetentionName(.none, .chinese), "不记录")
+        XCTAssertEqual(L10n.historyRetentionName(.none, .english), "Do Not Record")
+        XCTAssertEqual(L10n.historyDelete(.chinese), "删除历史记录")
+        XCTAssertEqual(L10n.historyDelete(.english), "Delete History")
+        XCTAssertEqual(L10n.historyDeleteConfirmTitle(.chinese), "删除全部历史记录？")
+        XCTAssertEqual(L10n.historyDeleteConfirmTitle(.english), "Delete All History?")
+        XCTAssertEqual(L10n.historyDeleteConfirmMessage(.chinese), "将删除这台 Mac 上保存的全部翻译历史，此操作无法撤销。")
+        XCTAssertEqual(
+            L10n.historyDeleteConfirmMessage(.english),
+            "This permanently deletes every saved translation on this Mac. This cannot be undone.")
+        XCTAssertEqual(L10n.historyDeleteConfirm(.chinese), "删除全部")
+        XCTAssertEqual(L10n.historyDeleteConfirm(.english), "Delete All")
+        XCTAssertEqual(L10n.historyDeleteCancel(.chinese), "取消")
+        XCTAssertEqual(L10n.historyDeleteCancel(.english), "Cancel")
         XCTAssertEqual(L10n.checkForUpdatesFailed(.chinese), "检查更新失败")
         XCTAssertEqual(L10n.checkForUpdatesFailed(.english), "Couldn’t check for updates")
         XCTAssertEqual(L10n.version(.chinese, marketing: "0.1.0"), "版本 0.1.0")
@@ -134,7 +148,32 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(store.targetLanguage, .english)
         XCTAssertEqual(store.translationBackend, .local)
         XCTAssertEqual(store.llmFallbackTimeout, 8)
+        XCTAssertEqual(store.historyRetention, .none)
+        XCTAssertEqual(defaults.string(forKey: "historyRetention"), "none")
+    }
+
+    func testStoredHistoryRetentionIsKept() {
+        let defaults = UserDefaults.standard
+        let saved = snapshot(defaults)
+        defer { restore(defaults, saved) }
+
+        for key in keys { defaults.removeObject(forKey: key) }
+        defaults.set("7d", forKey: "historyRetention")
+        let store = SettingsStore()
         XCTAssertEqual(store.historyRetention, .sevenDays)
+        XCTAssertEqual(defaults.string(forKey: "historyRetention"), "7d")
+    }
+
+    func testUnknownHistoryRetentionFallsBackToNoneWithoutOverwriting() {
+        let defaults = UserDefaults.standard
+        let saved = snapshot(defaults)
+        defer { restore(defaults, saved) }
+
+        for key in keys { defaults.removeObject(forKey: key) }
+        defaults.set("bogus", forKey: "historyRetention")
+        let store = SettingsStore()
+        XCTAssertEqual(store.historyRetention, .none)
+        XCTAssertEqual(defaults.string(forKey: "historyRetention"), "bogus")
     }
 
     func testTranslationDirectionAndBackendPersist() {
@@ -216,7 +255,7 @@ final class SettingsStoreTests: XCTestCase {
 
         let reloaded = SettingsStore()
         XCTAssertTrue(reloaded.speechEnabled)
-        XCTAssertEqual(reloaded.speechTriggers, [.pause, .shortcut])
+        XCTAssertEqual(reloaded.speechTriggers, [.shortcut])
         XCTAssertEqual(reloaded.translationTiming, .pause)
         XCTAssertEqual(defaults.string(forKey: "speechVoiceIdentifier"), "en-GB")
         XCTAssertEqual(defaults.double(forKey: "speechRate"), 0.35)
@@ -343,8 +382,8 @@ final class SpeechPolicyEvaluatorTests: XCTestCase {
         }
     }
 
-    func testSelectedPauseSpeaks() {
-        XCTAssertTrue(evaluator.shouldSpeak(speechEnabled: true, speechTriggers: [.pause], translationTiming: .pause))
+    func testSelectedPauseDoesNotSpeak() {
+        XCTAssertFalse(evaluator.shouldSpeak(speechEnabled: true, speechTriggers: [.pause], translationTiming: .pause))
         XCTAssertFalse(
             evaluator.shouldSpeak(
                 speechEnabled: true, speechTriggers: [.pause], translationTiming: .completeSentence))
@@ -357,9 +396,11 @@ final class SpeechPolicyEvaluatorTests: XCTestCase {
         XCTAssertFalse(evaluator.shouldSpeak(speechEnabled: true, speechTriggers: [], translationTiming: .completeSentence))
     }
 
-    func testAllSelectedSpeaksForEveryTiming() {
-        for timing in TranslationTiming.allCases {
-            XCTAssertTrue(evaluator.shouldSpeak(speechEnabled: true, speechTriggers: .all, translationTiming: timing))
-        }
+    func testAllSelectedSkipsPauseTiming() {
+        XCTAssertFalse(evaluator.shouldSpeak(speechEnabled: true, speechTriggers: .all, translationTiming: .pause))
+        XCTAssertTrue(
+            evaluator.shouldSpeak(
+                speechEnabled: true, speechTriggers: .all, translationTiming: .completeSentence))
+        XCTAssertTrue(evaluator.shouldSpeak(speechEnabled: true, speechTriggers: .all, translationTiming: .shortcut))
     }
 }

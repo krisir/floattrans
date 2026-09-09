@@ -65,6 +65,41 @@ final class TranslationHistoryTests: XCTestCase {
         XCTAssertTrue(entries.isEmpty)
     }
 
+    func testDoNotRecordDoesNotInsertAndKeepsExistingRows() async throws {
+        let (store, cleanup) = try makeStore()
+        defer { cleanup() }
+
+        _ = try await store.recordAndLoad(
+            sourceText: "kept", translatedText: "保留", sourceLanguage: .english, targetLanguage: .chinese,
+            retention: .forever)
+        let skipped = try await store.recordAndLoad(
+            sourceText: "new", translatedText: "新", sourceLanguage: .english, targetLanguage: .chinese,
+            retention: .none)
+        let loaded = try await store.load(retention: .none)
+
+        XCTAssertEqual(HistoryRetention.allCases.first, HistoryRetention.none)
+        XCTAssertNil(HistoryRetention.none.cutoffDate(now: Date()))
+        XCTAssertEqual(skipped.map(\.sourceText), ["kept"])
+        XCTAssertEqual(loaded.map(\.sourceText), ["kept"])
+    }
+
+    func testDeleteAllRemovesEveryRow() async throws {
+        let (store, cleanup) = try makeStore()
+        defer { cleanup() }
+
+        _ = try await store.recordAndLoad(
+            sourceText: "one", translatedText: "一", sourceLanguage: .english, targetLanguage: .chinese,
+            retention: .forever)
+        _ = try await store.recordAndLoad(
+            sourceText: "two", translatedText: "二", sourceLanguage: .english, targetLanguage: .chinese,
+            retention: .forever)
+        try await store.deleteAll()
+        let entries = try await store.load(retention: .forever)
+
+        XCTAssertTrue(entries.isEmpty)
+        // Cancel on the confirmation dialog never calls deleteAll; rows stay until this method runs.
+    }
+
     func testMarkdownExportGroupsByDateAndEscapesCells() {
         let entries = [
             TranslationHistoryEntry(

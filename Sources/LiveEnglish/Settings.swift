@@ -89,10 +89,10 @@ enum TranslationTiming: String, CaseIterable, Sendable {
     }
 }
 
-/// The translation events that may trigger text-to-speech. Unlike the
-/// translation timing itself, users may select more than one event.
+/// The translation events that may trigger text-to-speech. Pause-triggered
+/// translation is intentionally excluded because speaking while the user is
+/// still composing is disruptive.
 enum SpeechTrigger: Int, CaseIterable, Identifiable, Sendable {
-    case pause = 1
     case completeSentence = 2
     case shortcut = 4
 
@@ -100,7 +100,6 @@ enum SpeechTrigger: Int, CaseIterable, Identifiable, Sendable {
 
     var translationTiming: TranslationTiming {
         switch self {
-        case .pause: return .pause
         case .completeSentence: return .completeSentence
         case .shortcut: return .shortcut
         }
@@ -110,10 +109,10 @@ enum SpeechTrigger: Int, CaseIterable, Identifiable, Sendable {
 struct SpeechTriggerSelection: OptionSet, Codable, Equatable, Sendable {
     let rawValue: Int
 
-    static let pause = SpeechTriggerSelection(rawValue: SpeechTrigger.pause.rawValue)
+    static let pause = SpeechTriggerSelection(rawValue: 1)
     static let completeSentence = SpeechTriggerSelection(rawValue: SpeechTrigger.completeSentence.rawValue)
     static let shortcut = SpeechTriggerSelection(rawValue: SpeechTrigger.shortcut.rawValue)
-    static let all: SpeechTriggerSelection = [.pause, .completeSentence, .shortcut]
+    static let all: SpeechTriggerSelection = [.completeSentence, .shortcut]
 
     init(rawValue: Int) { self.rawValue = rawValue }
 
@@ -361,7 +360,7 @@ struct ReplaceShortcut: Equatable, Sendable {
         let speedValue = TranslationSpeed(rawValue: defaults.object(forKey: "translationSpeed") as? Int ?? 450)?.rawValue
             ?? TranslationSpeed.balanced.rawValue
         translationSpeed = speedValue
-        historyRetention = HistoryRetention(rawValue: defaults.string(forKey: "historyRetention") ?? "") ?? .sevenDays
+        historyRetention = HistoryRetention(rawValue: defaults.string(forKey: "historyRetention") ?? "") ?? .none
         translationTiming =
             TranslationTiming(rawValue: defaults.string(forKey: "translationTiming") ?? TranslationTiming.pause.rawValue)
             ?? .pause

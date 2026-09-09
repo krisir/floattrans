@@ -1,8 +1,4 @@
-## Purpose
-
-Defines 浮译's application visual identity: the macOS app icon shown in Dock, Finder, and About, derived from the Tabler Icons `brand-tailwind` mark.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Application icon uses Tabler brand-tailwind mark
 

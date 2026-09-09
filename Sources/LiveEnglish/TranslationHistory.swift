@@ -3,6 +3,7 @@ import SQLite3
 import Combine
 
 enum HistoryRetention: String, CaseIterable, Identifiable, Sendable {
+    case none
     case oneDay = "1d"
     case sevenDays = "7d"
     case thirtyDays = "30d"
@@ -13,11 +14,11 @@ enum HistoryRetention: String, CaseIterable, Identifiable, Sendable {
 
     func cutoffDate(now: Date, calendar: Calendar = .current) -> Date? {
         switch self {
+        case .none, .forever: return nil
         case .oneDay: return calendar.date(byAdding: .day, value: -1, to: now)
         case .sevenDays: return calendar.date(byAdding: .day, value: -7, to: now)
         case .thirtyDays: return calendar.date(byAdding: .day, value: -30, to: now)
         case .sixMonths: return calendar.date(byAdding: .month, value: -6, to: now)
-        case .forever: return nil
         }
     }
 }
@@ -108,6 +109,9 @@ actor TranslationHistoryStore {
         retention: HistoryRetention,
         now: Date = .now
     ) throws -> [TranslationHistoryEntry] {
+        if retention == .none {
+            return try load(retention: retention, now: now)
+        }
         let source = sourceText.trimmingCharacters(in: .whitespacesAndNewlines)
         let translation = translatedText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !source.isEmpty, !translation.isEmpty else { return try load(retention: retention, now: now) }
@@ -169,6 +173,10 @@ actor TranslationHistoryStore {
         defer { sqlite3_finalize(statement) }
         sqlite3_bind_double(statement, 1, cutoff.timeIntervalSince1970)
         try stepDone(statement)
+    }
+
+    func deleteAll() throws {
+        try Self.execute("DELETE FROM translation_history;", database: database)
     }
 
     private static func execute(_ sql: String, database: OpaquePointer) throws {
@@ -250,6 +258,19 @@ final class TranslationHistoryController: ObservableObject {
                     sourceLanguage: sourceLanguage,
                     targetLanguage: targetLanguage,
                     retention: retention)
+                errorMessage = nil
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    func deleteAll() {
+        guard let store else { return }
+        Task {
+            do {
+                try await store.deleteAll()
+                entries = []
                 errorMessage = nil
             } catch {
                 errorMessage = error.localizedDescription

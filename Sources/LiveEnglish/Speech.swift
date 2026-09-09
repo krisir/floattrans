@@ -24,7 +24,8 @@ struct SpeechPolicyEvaluator: Sendable {
         speechTriggers: SpeechTriggerSelection,
         translationTiming: TranslationTiming
     ) -> Bool {
-        speechEnabled && speechTriggers.contains(SpeechTriggerSelection(timing: translationTiming))
+        let normalizedTriggers = SpeechTriggerSelection.normalized(rawValue: speechTriggers.rawValue)
+        return speechEnabled && normalizedTriggers.contains(SpeechTriggerSelection(timing: translationTiming))
     }
 }
 

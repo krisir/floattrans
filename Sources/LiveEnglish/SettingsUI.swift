@@ -150,6 +150,7 @@ struct SettingsView: View {
     @State private var selectedPage: Page = .general
     @State private var draggedModelID: UUID?
     @State private var historyExportMessage: String?
+    @State private var confirmDeleteHistory = false
 
     init(state: AppState) {
         self.state = state
@@ -400,22 +401,14 @@ struct SettingsView: View {
                 .padding(.leading, 184)
             SettingsGroupHeader(title: L10n.groupSpeech(lang))
             SettingsRow(label: L10n.readTranslationsAloud(lang)) {
-                Menu {
-                    Toggle(L10n.speechTimingAll(lang), isOn: allSpeechTriggersBinding)
-                    Divider()
-                    ForEach(SpeechTrigger.allCases) { trigger in
-                        Toggle(speechTriggerName(trigger), isOn: speechTriggerBinding(trigger))
-                    }
-                } label: {
-                    HStack(spacing: 8) {
-                        Text(L10n.speechTimingSummary(settings.speechTriggers, lang))
-                        Image(systemName: "chevron.up.chevron.down")
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                    }
-                    .frame(minWidth: 250, alignment: .leading)
-                }
-                .menuStyle(.borderedButton)
+                Toggle(
+                    "",
+                    isOn: Binding(
+                        get: { settings.speechEnabled },
+                        set: { setSpeechEnabled($0) })
+                )
+                .labelsHidden()
+                .toggleStyle(.switch)
             }
             Text(L10n.speechVoiceHint(settings.targetLanguage, lang))
                 .font(.caption)
@@ -424,38 +417,9 @@ struct SettingsView: View {
         }
     }
 
-    private var allSpeechTriggersBinding: Binding<Bool> {
-        Binding(
-            get: { settings.speechTriggers == .all },
-            set: { setSpeechTriggers($0 ? .all : []) })
-    }
-
-    private func speechTriggerBinding(_ trigger: SpeechTrigger) -> Binding<Bool> {
-        let selection = SpeechTriggerSelection(rawValue: trigger.rawValue)
-        return Binding(
-            get: { settings.speechTriggers.contains(selection) },
-            set: { enabled in
-                var updated = settings.speechTriggers
-                if enabled {
-                    updated.insert(selection)
-                } else {
-                    updated.remove(selection)
-                }
-                setSpeechTriggers(updated)
-            })
-    }
-
-    private func setSpeechTriggers(_ triggers: SpeechTriggerSelection) {
-        settings.speechTriggers = triggers
-        if triggers.isEmpty { state.speech.stop() }
-    }
-
-    private func speechTriggerName(_ trigger: SpeechTrigger) -> String {
-        switch trigger {
-        case .pause: return L10n.speechTimingPause(lang)
-        case .completeSentence: return L10n.speechTimingCompleteSentence(lang)
-        case .shortcut: return L10n.speechTimingShortcut(lang)
-        }
+    private func setSpeechEnabled(_ enabled: Bool) {
+        settings.speechEnabled = enabled
+        if !enabled { state.speech.stop() }
     }
 
     @ViewBuilder
@@ -660,19 +624,35 @@ struct SettingsView: View {
                     }
                 }
                 .labelsHidden()
-                .frame(width: 160)
+                .frame(width: 180)
             }
             HStack {
                 Text(L10n.historyStorageHint(lang))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
+                Button(L10n.historyDelete(lang), role: .destructive) {
+                    confirmDeleteHistory = true
+                }
+                .disabled(history.entries.isEmpty)
                 Menu {
                     Button(L10n.historyExportMarkdown(lang)) { exportHistory(.markdown) }
                     Button(L10n.historyExportExcel(lang)) { exportHistory(.excel) }
                 } label: {
                     Label(L10n.historyExport(lang), systemImage: "square.and.arrow.up")
                 }
+            }
+            .confirmationDialog(
+                L10n.historyDeleteConfirmTitle(lang),
+                isPresented: $confirmDeleteHistory,
+                titleVisibility: .visible
+            ) {
+                Button(L10n.historyDeleteConfirm(lang), role: .destructive) {
+                    history.deleteAll()
+                }
+                Button(L10n.historyDeleteCancel(lang), role: .cancel) {}
+            } message: {
+                Text(L10n.historyDeleteConfirmMessage(lang))
             }
 
             if let historyExportMessage {

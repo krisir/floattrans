@@ -5,13 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
-      content="FloatTrans / 浮译 — macOS 菜单栏实时中译英工具。输入中文，屏幕上即时出现英文。"
+      content="FloatTrans / 浮译 — macOS 菜单栏实时翻译工具。支持多语言、本地翻译、LLM API、历史记录和导出。"
     />
     <meta name="theme-color" content="#05080a" />
     <meta property="og:title" content="FloatTrans · 浮译" />
     <meta
       property="og:description"
-      content="Write in Chinese. See it in English. A quiet macOS menu bar translator."
+      content="A quiet macOS menu bar translator with local and LLM backends, history, and export."
     />
     <meta property="og:image" content="assets/app-icon.png" />
     <title>FloatTrans · 浮译</title>
@@ -58,7 +58,7 @@
           </div>
           <a
             class="btn btn-primary btn-compact"
-            href="https://github.com/krisir/floattrans/releases/download/v0.2.0/FloatTrans-0.2.0.dmg"
+            href="https://github.com/krisir/floattrans/releases/download/v0.3.0/FloatTrans-0.3.0.dmg"
           >
             <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
               <path
@@ -96,19 +96,19 @@
           <div class="hero-copy">
             <p class="eyebrow">
               <span class="dot" aria-hidden="true"></span>
-              <span data-i18n="eyebrow">macOS 菜单栏工具 · 本地翻译</span>
+              <span data-i18n="eyebrow">macOS 菜单栏工具 · 本地与 API 翻译</span>
             </p>
             <h1>
-              <span data-i18n="heroTitle1">输入中文</span>
-              <span class="accent" data-i18n="heroTitle2">看见英文</span>
+              <span data-i18n="heroTitle1">选择语言</span>
+              <span class="accent" data-i18n="heroTitle2">即时翻译</span>
             </h1>
             <p class="lede" data-i18n="heroLede">
-              浮译会读取当前支持辅助功能的文本框，把正在输入的中文句子翻译成英文，并以低打扰的浮动框显示。默认无需复制或粘贴；需要时可以打开「替换原文」（⌥⇧[）或「复制译文」（⌥⇧]）。
+              浮译会读取当前支持辅助功能的文本框，按你选择的源语言和目标语言翻译，并以低打扰的浮动框显示。可使用 macOS 本地翻译，也可切换到带故障切换的大语言模型 API。
             </p>
             <div class="hero-cta">
               <a
                 class="btn btn-primary"
-                href="https://github.com/krisir/floattrans/releases/download/v0.2.0/FloatTrans-0.2.0.dmg"
+                href="https://github.com/krisir/floattrans/releases/download/v0.3.0/FloatTrans-0.3.0.dmg"
               >
                 <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
                   <path
@@ -120,7 +120,7 @@
                     d="M12 3v12m0 0-4-4m4 4 4-4M5 21h14"
                   />
                 </svg>
-                <span data-i18n="ctaPrimary">下载 FloatTrans 0.2.0</span>
+                <span data-i18n="ctaPrimary">下载 FloatTrans 0.3.0</span>
               </a>
               <a
                 class="btn btn-secondary"
@@ -133,12 +133,12 @@
               </a>
             </div>
             <p class="download-meta">
-              <span data-i18n="downloadMeta">macOS · v0.2.0 · FloatTrans-0.2.0.dmg</span>
+              <span data-i18n="downloadMeta">macOS · v0.3.0 · FloatTrans-0.3.0.dmg</span>
             </p>
             <ul class="hero-points" role="list">
               <li data-i18n="point1">实时按句翻译</li>
               <li data-i18n="point2">浮动字幕低打扰</li>
-              <li data-i18n="point3">系统本地模型，不上云</li>
+              <li data-i18n="point3">本地或自选 API</li>
             </ul>
           </div>
 
@@ -190,8 +190,8 @@
             </li>
             <li>
               <span class="step-num">02</span>
-              <h3 data-i18n="step2Title">本地翻译</h3>
-              <p data-i18n="step2Body">使用 macOS Translation 框架与本地语言模型。默认停顿后触发，也可改成打完标点再译，或按快捷键再译。</p>
+              <h3 data-i18n="step2Title">选择翻译引擎</h3>
+              <p data-i18n="step2Body">使用 macOS Translation 本地语言包，或切换到 OpenAI 兼容、Claude、DeepSeek、GLM 和自定义 API。</p>
             </li>
             <li>
               <span class="step-num">03</span>
@@ -205,25 +205,25 @@
       <section id="whats-new" class="section">
         <div class="container">
           <div class="section-head">
-            <p class="eyebrow" data-i18n="whatsNewEyebrow">v0.2.0</p>
+            <p class="eyebrow" data-i18n="whatsNewEyebrow">v0.3.0</p>
             <h2 data-i18n="whatsNewTitle">这次更新了什么</h2>
           </div>
           <ul class="whats-new" role="list">
             <li>
-              <h3 data-i18n="whats1Title">三种翻译时机</h3>
-              <p data-i18n="whats1Body">超时翻译、完整句子翻译，或快捷键触发（默认 ⌃⇧T）。翻译速度只影响超时模式。</p>
+              <h3 data-i18n="whats1Title">多语言翻译方向</h3>
+              <p data-i18n="whats1Body">源语言和目标语言可独立选择中文、英语、日语、俄语、韩语、法语、德语和西班牙语。</p>
             </li>
             <li>
-              <h3 data-i18n="whats2Title">替换原文与复制译文</h3>
-              <p data-i18n="whats2Body">打开开关后，⌥⇧[ 把当前英文写回输入框，⌥⇧] 复制到剪贴板。快捷键可改。</p>
+              <h3 data-i18n="whats2Title">本地 / API 双引擎</h3>
+              <p data-i18n="whats2Body">可使用 macOS 本地翻译，或配置多个大语言模型端点并按顺序自动故障切换。</p>
             </li>
             <li>
-              <h3 data-i18n="whats3Title">可选朗读</h3>
-              <p data-i18n="whats3Body">朗读翻译结果。超时翻译时不会出声，请改用完整句子或快捷键。</p>
+              <h3 data-i18n="whats3Title">本机历史记录</h3>
+              <p data-i18n="whats3Body">成功翻译会保存到本机 SQLite，可设置保留时间，并按日期查看。</p>
             </li>
             <li>
-              <h3 data-i18n="whats4Title">检查更新</h3>
-              <p data-i18n="whats4Body">设置 → 关于对照 GitHub Releases。有新版本就打开对应发布页。</p>
+              <h3 data-i18n="whats4Title">Markdown / Excel 导出</h3>
+              <p data-i18n="whats4Body">历史记录可导出为 Markdown 或 Excel，包含「序号 / 原文 / 译文」三列。</p>
             </li>
           </ul>
         </div>
@@ -297,8 +297,8 @@
                   />
                 </svg>
               </div>
-              <h3 data-i18n="feat4Title">中英界面</h3>
-              <p data-i18n="feat4Body">菜单栏与设置页支持简体中文 / English，切换后立即生效。</p>
+              <h3 data-i18n="feat4Title">模型配置</h3>
+              <p data-i18n="feat4Body">API 密钥存入 macOS 钥匙串；模型、端点、提示词、思考模式和排序可在设置中编辑。</p>
             </article>
             <article class="card card-wide">
               <div class="card-icon" aria-hidden="true">
@@ -314,7 +314,7 @@
                 </svg>
               </div>
               <h3 data-i18n="feat5Title">隐私优先</h3>
-              <p data-i18n="feat5Body">翻译走系统本地能力，无需 API Key、无需自建服务器。调试日志只留在本机，且不记录密码内容。</p>
+              <p data-i18n="feat5Body">默认可走系统本地能力；切换 API 时，文本只发送到你配置的服务商。调试日志只留在本机，且不记录密码内容。</p>
             </article>
           </div>
         </div>
@@ -324,16 +324,16 @@
         <div class="container privacy-grid">
           <div>
             <p class="eyebrow" data-i18n="privacyEyebrow">隐私</p>
-            <h2 data-i18n="privacyTitle">你的输入留在本机</h2>
+            <h2 data-i18n="privacyTitle">本地优先，自选 API</h2>
             <p class="lede" data-i18n="privacyBody">
-              浮译需要辅助功能权限才能读取当前文本框的内容，但不会读取密码字段，也不会把原文或译文上传到我们的服务器——因为我们根本没有服务器。
+              浮译需要辅助功能权限才能读取当前文本框的内容，但不会读取密码字段。本地翻译不会上传文本；切换 API 翻译时，文本会发送到你配置的服务商。
             </p>
           </div>
           <ul class="checklist" role="list">
             <li data-i18n="privacy1">跳过 Secure TextField / 密码框</li>
-            <li data-i18n="privacy2">使用 macOS 本地 Translation 语言包</li>
-            <li data-i18n="privacy3">可选排除敏感应用</li>
-            <li data-i18n="privacy4">Release 日志不输出用户原文</li>
+            <li data-i18n="privacy2">API Key 存入 macOS 钥匙串</li>
+            <li data-i18n="privacy3">历史记录保存在本机 SQLite</li>
+            <li data-i18n="privacy4">可选排除敏感应用</li>
           </ul>
         </div>
       </section>
@@ -352,7 +352,7 @@
             </div>
             <a
               class="btn btn-primary"
-              href="https://github.com/krisir/floattrans/releases/download/v0.2.0/FloatTrans-0.2.0.dmg"
+              href="https://github.com/krisir/floattrans/releases/download/v0.3.0/FloatTrans-0.3.0.dmg"
             >
               <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
                 <path
@@ -364,7 +364,7 @@
                   d="M12 3v12m0 0-4-4m4 4 4-4M5 21h14"
                 />
               </svg>
-              <span data-i18n="ctaDownloadDmg">下载 FloatTrans-0.2.0.dmg</span>
+              <span data-i18n="ctaDownloadDmg">下载 FloatTrans-0.3.0.dmg</span>
             </a>
           </div>
 
@@ -374,7 +374,7 @@
               <ul>
                 <li data-i18n="req1">macOS 15 或更高版本</li>
                 <li data-i18n="req2">Accessibility（辅助功能）权限</li>
-                <li data-i18n="req3">中文 → 英文 Translation 语言包</li>
+                <li data-i18n="req3">本地翻译需要对应语言包；API 翻译需要服务商密钥</li>
               </ul>
             </div>
 
@@ -395,14 +395,14 @@ open FloatTrans.app</code></pre>
 
           <ol class="setup-steps">
             <li data-i18n="setup1">启动后在引导页打开辅助功能设置并授权。</li>
-            <li data-i18n="setup2">在设置中安装中文 → 英文语言包并等待下载完成。</li>
-            <li data-i18n="setup3">在 TextEdit、浏览器等支持辅助功能的输入框中输入中文。默认停下片刻即可看到英文浮动框；也可改成完整句子或快捷键触发。</li>
+            <li data-i18n="setup2">在设置中选择源语言、目标语言和本地或 API 翻译引擎。</li>
+            <li data-i18n="setup3">在 TextEdit、浏览器等支持辅助功能的输入框中输入所选源语言。默认停下片刻即可看到译文浮动框；也可改成完整句子或快捷键触发。</li>
           </ol>
 
           <div class="bottom-cta">
             <a
               class="btn btn-primary"
-              href="https://github.com/krisir/floattrans/releases/download/v0.2.0/FloatTrans-0.2.0.dmg"
+              href="https://github.com/krisir/floattrans/releases/download/v0.3.0/FloatTrans-0.3.0.dmg"
             >
               <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
                 <path
@@ -414,7 +414,7 @@ open FloatTrans.app</code></pre>
                   d="M12 3v12m0 0-4-4m4 4 4-4M5 21h14"
                 />
               </svg>
-              <span data-i18n="ctaPrimary">下载 FloatTrans 0.2.0</span>
+              <span data-i18n="ctaPrimary">下载 FloatTrans 0.3.0</span>
             </a>
             <a
               class="btn btn-secondary"
@@ -441,7 +441,7 @@ open FloatTrans.app</code></pre>
           <img src="assets/app-icon.svg" width="28" height="28" alt="" />
           <div>
             <strong>FloatTrans · 浮译</strong>
-            <p data-i18n="footerTag">开源的 macOS 实时中译英菜单栏工具。</p>
+            <p data-i18n="footerTag">开源的 macOS 实时翻译菜单栏工具。</p>
           </div>
         </div>
         <p class="footer-meta">

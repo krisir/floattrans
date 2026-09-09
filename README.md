@@ -1,17 +1,18 @@
 # FloatTrans
 
-[项目主页](https://krisir.github.io/floattrans/) · [下载 v0.2.0](https://github.com/krisir/floattrans/releases/download/v0.2.0/FloatTrans-0.2.0.dmg) · [GitHub](https://github.com/krisir/floattrans)
+[项目主页](https://krisir.github.io/floattrans/) · [下载 v0.3.0](https://github.com/krisir/floattrans/releases/download/v0.3.0/FloatTrans-0.3.0.dmg) · [GitHub](https://github.com/krisir/floattrans)
 
 FloatTrans 是一款 macOS 菜单栏实时翻译工具。它读取当前应用中支持 Accessibility 的文本输入框，按设置的语言方向翻译，并以低打扰的浮动框显示结果。
 
-## 0.2.0 新功能
+## 0.3.0 新功能
 
-- **翻译时机**：超时翻译（默认）、完整句子翻译，或快捷键触发翻译（默认 ⌃⇧T）
-- **替换原文 / 复制译文**：默认 ⌥⇧[ 写回输入框，⌥⇧] 复制当前英文；快捷键可在设置里改
-- **朗读翻译**：可分别选择超时、完整句子、快捷键触发翻译时是否朗读；自动使用 macOS 中目标语言的默认系统语音
-- **检查更新**：设置 → 关于里对照 GitHub Releases，有新版本则打开对应发布页
-- **中英界面**：菜单栏和设置支持简体中文 / English
-- 支持 macOS 15 及以上（系统 Translation 语言包）
+- **多语言方向**：源语言与目标语言可独立选择中文、英语、日语、俄语、韩语、法语、德语和西班牙语
+- **本地 / API 双引擎**：继续支持 macOS 本地 Translation，也可切换到大语言模型 API
+- **多模型故障切换**：支持 OpenAI 兼容接口、Claude、DeepSeek、GLM 和自定义端点；多个模型可拖动排序并按超时自动切换
+- **安全保存密钥**：API Key 存入 macOS 钥匙串，应用偏好设置里只保存模型的非敏感配置
+- **翻译历史**：默认不记录；可选 1 天、7 天、30 天、6 个月或永久保留，也可一键删除全部记录
+- **导出历史**：支持按日期分组导出 Markdown 或 Excel，列为「序号 / 原文 / 译文」
+- **设置体验更新**：更大的默认设置窗口、全宽导航标签、历史记录入口，以及目标语言默认语音朗读
 
 ## 功能
 
@@ -21,7 +22,7 @@ FloatTrans 是一款 macOS 菜单栏实时翻译工具。它读取当前应用�
 - 支持 OpenAI 兼容接口、Claude、DeepSeek、GLM 和自定义 API URL；可配置模型名、密钥、提示词和思考/非思考模式
 - 可添加多个 API 模型并在设置中拖动排序；首个模型超时或请求失败会按顺序自动切换，切换阈值可配置
 - API 密钥保存于 macOS 钥匙串，不会写入应用偏好设置
-- 翻译成功后会保存原文与译文到本机历史记录；可按 1 天、7 天、30 天、6 个月或永久保存，并导出 Markdown 或 Excel
+- 默认不记录翻译历史；需要时可选 1 天、7 天、30 天、6 个月或永久保存，支持确认后删除全部记录，并导出 Markdown 或 Excel
 - 实时监听支持 macOS Accessibility 的文本输入框
 - 按句子识别，支持所选源语言的文字系统及中英文标点
 - 同一句动态更新，新句子显示新的浮动框
@@ -100,7 +101,7 @@ zsh Scripts/build-dmg.sh
 - 翻译：本地 / API 引擎、源语言 / 目标语言、语言包、速度、翻译时机、替换原文、复制译文、朗读时机多选及各自快捷键
 - API 模型：多个模型可拖动排序；为每项配置提供商、URL、密钥、模型、提示词和思考模式，设置全局自动切换超时
 - 悬浮窗：位置、显示行为、字号、屏幕边距、隐藏时间和预览
-- 历史记录：按日期查看原文和译文，设置保存期限，导出 Markdown 或 Excel
+- 历史记录：按日期查看原文和译文，默认不记录，可改保存期限，确认后删除全部记录，导出 Markdown 或 Excel
 - 隐私：添加或移除排除翻译的应用
 - 关于：版本、仓库链接、检查更新
 
@@ -135,6 +136,7 @@ Sources/LiveEnglish/
 ├── L10n.swift         中英界面文案
 ├── LLMTranslation.swift 多模型 API 请求、提示词和故障切换
 ├── KeychainStore.swift  API 密钥钥匙串存储
+├── TranslationHistory.swift 本机翻译历史和 Markdown / Excel 导出
 ├── UpdateChecker.swift  GitHub 检查更新
 └── Diagnostics.swift  本地调试日志
 ```

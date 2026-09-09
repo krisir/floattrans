@@ -180,6 +180,7 @@ enum L10n {
     }
     static func historyRetentionName(_ value: HistoryRetention, _ lang: UILanguage) -> String {
         switch value {
+        case .none: return lang == .chinese ? "不记录" : "Do Not Record"
         case .oneDay: return lang == .chinese ? "1 天" : "1 Day"
         case .sevenDays: return lang == .chinese ? "7 天" : "7 Days"
         case .thirtyDays: return lang == .chinese ? "30 天" : "30 Days"
@@ -201,6 +202,23 @@ enum L10n {
     }
     static func historyStorageHint(_ lang: UILanguage) -> String {
         lang == .chinese ? "历史记录仅保存在这台 Mac 上。" : "History is stored only on this Mac."
+    }
+    static func historyDelete(_ lang: UILanguage) -> String {
+        lang == .chinese ? "删除历史记录" : "Delete History"
+    }
+    static func historyDeleteConfirmTitle(_ lang: UILanguage) -> String {
+        lang == .chinese ? "删除全部历史记录？" : "Delete All History?"
+    }
+    static func historyDeleteConfirmMessage(_ lang: UILanguage) -> String {
+        lang == .chinese
+            ? "将删除这台 Mac 上保存的全部翻译历史，此操作无法撤销。"
+            : "This permanently deletes every saved translation on this Mac. This cannot be undone."
+    }
+    static func historyDeleteConfirm(_ lang: UILanguage) -> String {
+        lang == .chinese ? "删除全部" : "Delete All"
+    }
+    static func historyDeleteCancel(_ lang: UILanguage) -> String {
+        lang == .chinese ? "取消" : "Cancel"
     }
     static func translateShortcut(_ lang: UILanguage) -> String {
         lang == .chinese ? "翻译快捷键" : "Translate Shortcut"
@@ -285,7 +303,7 @@ enum L10n {
         lang == .chinese ? "朗读翻译结果" : "Read Translations Aloud"
     }
     static func speechTimingAll(_ lang: UILanguage) -> String {
-        lang == .chinese ? "全部时机" : "All Translation Events"
+        lang == .chinese ? "完整句子和快捷键" : "Complete Sentence and Shortcut"
     }
     static func speechTimingNone(_ lang: UILanguage) -> String {
         lang == .chinese ? "不朗读" : "Never"
@@ -301,12 +319,12 @@ enum L10n {
     }
     static func speechTimingSummary(_ selection: SpeechTriggerSelection, _ lang: UILanguage) -> String {
         if selection.isEmpty { return speechTimingNone(lang) }
-        if selection == .all { return speechTimingAll(lang) }
+        let normalized = SpeechTriggerSelection.normalized(rawValue: selection.rawValue)
+        if normalized == .all { return speechTimingAll(lang) }
         return SpeechTrigger.allCases.compactMap { trigger in
             let triggerSelection = SpeechTriggerSelection(rawValue: trigger.rawValue)
-            guard selection.contains(triggerSelection) else { return nil }
+            guard normalized.contains(triggerSelection) else { return nil }
             switch trigger {
-            case .pause: return speechTimingPause(lang)
             case .completeSentence: return speechTimingCompleteSentence(lang)
             case .shortcut: return speechTimingShortcut(lang)
             }
