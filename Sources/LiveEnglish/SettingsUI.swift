@@ -1,18 +1,36 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
+@preconcurrency import Translation
 
 struct SettingsRow<Content: View>: View {
     let label: String
     @ViewBuilder var content: () -> Content
 
     var body: some View {
-        HStack(alignment: .center, spacing: 12) {
+        HStack(alignment: .center, spacing: 16) {
             Text(label)
                 .multilineTextAlignment(.trailing)
-                .frame(width: 150, alignment: .trailing)
+                .frame(width: 168, alignment: .trailing)
             content()
             Spacer(minLength: 0)
         }
+    }
+}
+
+/// A light material panel keeps dense settings readable while preserving the
+/// native macOS appearance in both light and dark mode.
+struct SettingsPanel<Content: View>: View {
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14, content: content)
+            .padding(18)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+            }
     }
 }
 
@@ -23,6 +41,22 @@ struct SettingsGroupHeader: View {
             .font(.subheadline.weight(.semibold))
             .foregroundStyle(.secondary)
             .padding(.top, 4)
+    }
+}
+
+/// Gives the full-width settings navigation cells a restrained pressed state
+/// without restoring macOS's prominent keyboard focus outline.
+private struct SettingsTabButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity)
+            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .background {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(configuration.isPressed ? Color.accentColor.opacity(0.16) : Color.clear)
+            }
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
 
@@ -85,13 +119,14 @@ struct OverlayPositionThumbnail: View {
 
 struct SettingsView: View {
     private enum Page: CaseIterable {
-        case general, translation, overlay, privacy, about
+        case general, translation, overlay, history, privacy, about
 
         var systemImage: String {
             switch self {
             case .general: return "gearshape"
             case .translation: return "character.bubble"
             case .overlay: return "rectangle.on.rectangle"
+            case .history: return "clock"
             case .privacy: return "lock"
             case .about: return "info.circle"
             }
@@ -102,6 +137,7 @@ struct SettingsView: View {
             case .general: return L10n.tabGeneral(lang)
             case .translation: return L10n.tabTranslation(lang)
             case .overlay: return L10n.tabOverlay(lang)
+            case .history: return L10n.tabHistory(lang)
             case .privacy: return L10n.tabPrivacy(lang)
             case .about: return L10n.tabAbout(lang)
             }
@@ -110,11 +146,15 @@ struct SettingsView: View {
 
     @ObservedObject var state: AppState
     @ObservedObject private var settings: SettingsStore
+    @ObservedObject private var history: TranslationHistoryController
     @State private var selectedPage: Page = .general
+    @State private var draggedModelID: UUID?
+    @State private var historyExportMessage: String?
 
     init(state: AppState) {
         self.state = state
         self._settings = ObservedObject(wrappedValue: state.settings)
+        self._history = ObservedObject(wrappedValue: state.history)
     }
 
     private var lang: UILanguage { settings.uiLanguage }
@@ -125,19 +165,19 @@ struct SettingsView: View {
             Divider()
             pageContent
         }
-        .frame(minWidth: 520, idealWidth: 520, minHeight: 360, idealHeight: 480)
+        .frame(minWidth: 760, idealWidth: 840, minHeight: 520, idealHeight: 700)
         .onAppear { state.updateSettingsWindowTitle() }
-        .onChange(of: settings.uiLanguage) { _ in state.updateSettingsWindowTitle() }
+        .onChange(of: settings.uiLanguage) { _, _ in state.updateSettingsWindowTitle() }
     }
 
     private var tabBar: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 6) {
             ForEach(Page.allCases, id: \.self) { page in
                 tabButton(page)
             }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 6)
     }
 
     private func tabButton(_ page: Page) -> some View {
@@ -145,17 +185,25 @@ struct SettingsView: View {
         return Button {
             selectedPage = page
         } label: {
-            Label(page.title(lang), systemImage: page.systemImage)
-                .labelStyle(.titleAndIcon)
-                .font(.system(size: 11, weight: selected ? .semibold : .regular))
+            HStack(spacing: 6) {
+                if page == .history {
+                    Image("HistoryIcon")
+                        .renderingMode(.template)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 14, height: 14)
+                } else {
+                    Image(systemName: page.systemImage)
+                }
+                Text(page.title(lang))
+            }
+            .frame(maxWidth: .infinity)
+                .font(.system(size: 12, weight: selected ? .semibold : .regular))
                 .lineLimit(1)
-                .minimumScaleFactor(0.75)
                 .foregroundStyle(selected ? Color.accentColor : Color.secondary)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 6)
         }
-        .buttonStyle(.plain)
-        .controlSize(.small)
+        .buttonStyle(SettingsTabButtonStyle())
+        .focusEffectDisabled()
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
@@ -166,6 +214,7 @@ struct SettingsView: View {
             case .general: generalPage
             case .translation: translationPage
             case .overlay: overlayPage
+            case .history: historyPage
             case .privacy: privacyPage
             case .about: aboutPage
             }
@@ -213,8 +262,45 @@ struct SettingsView: View {
 
     private var translationPage: some View {
         settingsPage(title: L10n.tabTranslation(lang)) {
+            SettingsRow(label: L10n.translationBackend(lang)) {
+                Picker("", selection: $settings.translationBackend) {
+                    ForEach(TranslationBackend.allCases) { backend in
+                        Text(backend.displayName(for: lang)).tag(backend)
+                    }
+                }
+                .labelsHidden()
+                .frame(maxWidth: 220)
+            }
+            SettingsRow(label: L10n.sourceLanguage(lang)) {
+                Picker(
+                    "",
+                    selection: Binding(
+                        get: { settings.sourceLanguage },
+                        set: { source in
+                            settings.sourceLanguage = source
+                            if settings.targetLanguage == source {
+                                settings.targetLanguage = source == .english ? .chinese : .english
+                            }
+                        })
+                ) {
+                    ForEach(Language.allCases) { language in
+                        Text(languageName(language)).tag(language)
+                    }
+                }
+                .labelsHidden()
+                .frame(maxWidth: 220)
+            }
+            SettingsRow(label: L10n.targetLanguage(lang)) {
+                Picker("", selection: $settings.targetLanguage) {
+                    ForEach(Language.allCases.filter { $0 != settings.sourceLanguage }) { language in
+                        Text(languageName(language)).tag(language)
+                    }
+                }
+                .labelsHidden()
+                .frame(maxWidth: 220)
+            }
             SettingsRow(label: L10n.translationDirection(lang)) {
-                Text(L10n.translationDirectionValue(lang))
+                Text(L10n.translationDirectionValue(settings.sourceLanguage, settings.targetLanguage, lang))
                     .foregroundStyle(.secondary)
             }
             SettingsRow(label: L10n.translationSpeed(lang)) {
@@ -257,8 +343,19 @@ struct SettingsView: View {
                         onCommit: { state.setTranslateShortcut($0) })
                 }
             }
-            SettingsRow(label: L10n.languageResources(lang)) {
-                LanguageResourceRow(language: lang, holder: state.translationHolder)
+            if settings.translationBackend == .local {
+                SettingsRow(label: L10n.languageResources(lang)) {
+                    LanguageResourceRow(
+                        language: lang,
+                        sourceLanguage: settings.sourceLanguage,
+                        targetLanguage: settings.targetLanguage)
+                }
+                Text(L10n.localTranslationPrivacy(lang))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 184)
+            } else {
+                modelSettingsSection
             }
             SettingsGroupHeader(title: L10n.groupActions(lang))
             SettingsRow(label: L10n.replaceOriginal(lang)) {
@@ -280,7 +377,7 @@ struct SettingsView: View {
             Text(L10n.replaceOriginalHint(lang))
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .padding(.leading, 162)
+                .padding(.leading, 184)
             SettingsRow(label: L10n.copyTranslation(lang)) {
                 Toggle(
                     "",
@@ -300,28 +397,139 @@ struct SettingsView: View {
             Text(L10n.copyTranslationHint(lang))
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .padding(.leading, 162)
+                .padding(.leading, 184)
             SettingsGroupHeader(title: L10n.groupSpeech(lang))
             SettingsRow(label: L10n.readTranslationsAloud(lang)) {
-                Toggle(
-                    "",
-                    isOn: Binding(
-                        get: { settings.speechEnabled },
-                        set: {
-                            settings.speechEnabled = $0
-                            if !$0 { state.speech.stop() }
-                        })
-                )
-                .labelsHidden()
-                .toggleStyle(.switch)
+                Menu {
+                    Toggle(L10n.speechTimingAll(lang), isOn: allSpeechTriggersBinding)
+                    Divider()
+                    ForEach(SpeechTrigger.allCases) { trigger in
+                        Toggle(speechTriggerName(trigger), isOn: speechTriggerBinding(trigger))
+                    }
+                } label: {
+                    HStack(spacing: 8) {
+                        Text(L10n.speechTimingSummary(settings.speechTriggers, lang))
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(minWidth: 250, alignment: .leading)
+                }
+                .menuStyle(.borderedButton)
             }
-            if settings.speechEnabled, settings.translationTiming == .pause {
-                Text(L10n.autoSpeakTimingHint(lang))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.leading, 162)
-            }
+            Text(L10n.speechVoiceHint(settings.targetLanguage, lang))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.leading, 184)
         }
+    }
+
+    private var allSpeechTriggersBinding: Binding<Bool> {
+        Binding(
+            get: { settings.speechTriggers == .all },
+            set: { setSpeechTriggers($0 ? .all : []) })
+    }
+
+    private func speechTriggerBinding(_ trigger: SpeechTrigger) -> Binding<Bool> {
+        let selection = SpeechTriggerSelection(rawValue: trigger.rawValue)
+        return Binding(
+            get: { settings.speechTriggers.contains(selection) },
+            set: { enabled in
+                var updated = settings.speechTriggers
+                if enabled {
+                    updated.insert(selection)
+                } else {
+                    updated.remove(selection)
+                }
+                setSpeechTriggers(updated)
+            })
+    }
+
+    private func setSpeechTriggers(_ triggers: SpeechTriggerSelection) {
+        settings.speechTriggers = triggers
+        if triggers.isEmpty { state.speech.stop() }
+    }
+
+    private func speechTriggerName(_ trigger: SpeechTrigger) -> String {
+        switch trigger {
+        case .pause: return L10n.speechTimingPause(lang)
+        case .completeSentence: return L10n.speechTimingCompleteSentence(lang)
+        case .shortcut: return L10n.speechTimingShortcut(lang)
+        }
+    }
+
+    @ViewBuilder
+    private var modelSettingsSection: some View {
+        SettingsGroupHeader(title: L10n.modelSettings(lang))
+        Text(L10n.modelSettingsHint(lang))
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.leading, 184)
+        SettingsRow(label: L10n.failoverTimeout(lang)) {
+            HStack(spacing: 8) {
+                Slider(value: $settings.llmFallbackTimeout, in: 1...120, step: 1)
+                Text(L10n.timeoutSeconds(lang, Int(settings.llmFallbackTimeout)))
+                    .monospacedDigit()
+                    .frame(width: 112, alignment: .trailing)
+            }
+            .frame(maxWidth: 290)
+        }
+        Text(L10n.apiKeyKeychainHint(lang))
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.leading, 184)
+        if settings.llmModels.isEmpty {
+            Text(L10n.noModels(lang))
+                .foregroundStyle(.secondary)
+                .padding(.leading, 184)
+        } else {
+            // This is intentionally a VStack rather than a nested List: the
+            // page's outer ScrollView is the only scroll container. Rows are
+            // still draggable to reorder models within that single viewport.
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(settings.llmModels) { model in
+                    LLMModelEditor(
+                        model: model,
+                        language: lang,
+                        save: { settings.updateLLMModel($0) },
+                        remove: { settings.removeLLMModel(id: model.id) })
+                        .padding(10)
+                        .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                        .onDrag {
+                            draggedModelID = model.id
+                            return NSItemProvider(object: model.id.uuidString as NSString)
+                        }
+                        .onDrop(
+                            of: [.text],
+                            delegate: ModelOrderDropDelegate(
+                                targetID: model.id,
+                                models: $settings.llmModels,
+                                draggedID: $draggedModelID))
+                }
+            }
+            .padding(.leading, 184)
+        }
+        SettingsRow(label: "") {
+            Button(L10n.addModel(lang)) { settings.addLLMModel(defaultModel()) }
+                .buttonStyle(.bordered)
+        }
+        Text(L10n.llmTranslationPrivacy(lang))
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.leading, 184)
+    }
+
+    private func languageName(_ language: Language) -> String {
+        lang == .chinese ? language.chineseName : language.englishName
+    }
+
+    private func defaultModel() -> LLMModelConfiguration {
+        LLMModelConfiguration(
+            name: lang == .chinese ? "新的 API 模型" : "New API Model",
+            provider: .openAICompatible,
+            baseURL: LLMProvider.openAICompatible.defaultBaseURL,
+            model: LLMProvider.openAICompatible.defaultModel,
+            timeoutSeconds: 0)
     }
 
     private var overlayPage: some View {
@@ -439,6 +647,126 @@ struct SettingsView: View {
         }
     }
 
+    private var historyPage: some View {
+        settingsPage(title: L10n.tabHistory(lang)) {
+            SettingsRow(label: L10n.historyRetention(lang)) {
+                Picker(
+                    "",
+                    selection: Binding(
+                        get: { settings.historyRetention },
+                        set: { settings.historyRetention = $0 })) {
+                    ForEach(HistoryRetention.allCases) { retention in
+                        Text(L10n.historyRetentionName(retention, lang)).tag(retention)
+                    }
+                }
+                .labelsHidden()
+                .frame(width: 160)
+            }
+            HStack {
+                Text(L10n.historyStorageHint(lang))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Menu {
+                    Button(L10n.historyExportMarkdown(lang)) { exportHistory(.markdown) }
+                    Button(L10n.historyExportExcel(lang)) { exportHistory(.excel) }
+                } label: {
+                    Label(L10n.historyExport(lang), systemImage: "square.and.arrow.up")
+                }
+            }
+
+            if let historyExportMessage {
+                Text(historyExportMessage)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            if let errorMessage = history.errorMessage {
+                Text(errorMessage)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            } else if history.entries.isEmpty {
+                Text(L10n.historyEmpty(lang))
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 12)
+            } else {
+                historyTable
+            }
+        }
+        .task { history.reload(retention: settings.historyRetention) }
+    }
+
+    private var historyTable: some View {
+        LazyVStack(alignment: .leading, spacing: 12) {
+            ForEach(historyDayGroups) { group in
+                Text(historyDayString(group.day))
+                    .font(.subheadline.weight(.semibold))
+                    .padding(.top, 4)
+                HStack(alignment: .top, spacing: 12) {
+                    Text(L10n.historyIndex(lang)).frame(width: 42, alignment: .trailing)
+                    Text(L10n.historyOriginal(lang)).frame(maxWidth: .infinity, alignment: .leading)
+                    Text(L10n.historyTranslation(lang)).frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+                ForEach(Array(group.entries.enumerated()), id: \.element.id) { index, entry in
+                    HStack(alignment: .top, spacing: 12) {
+                        Text("\(index + 1)")
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                            .frame(width: 42, alignment: .trailing)
+                        Text(entry.sourceText)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Text(entry.translatedText)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .font(.callout)
+                    Divider()
+                }
+            }
+        }
+    }
+
+    private var historyDayGroups: [HistoryDayGroup] {
+        let calendar = Calendar.current
+        var groups: [HistoryDayGroup] = []
+        for entry in history.entries {
+            let day = calendar.startOfDay(for: entry.createdAt)
+            if let last = groups.indices.last, calendar.isDate(groups[last].day, inSameDayAs: day) {
+                groups[last].entries.append(entry)
+            } else {
+                groups.append(HistoryDayGroup(day: day, entries: [entry]))
+            }
+        }
+        return groups
+    }
+
+    private func historyDayString(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.timeZone = .current
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: date)
+    }
+
+    private func exportHistory(_ format: HistoryExportFormat) {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "FloatTrans-history.\(format.fileExtension)"
+        panel.allowedContentTypes = [UTType(filenameExtension: format.fileExtension) ?? .data]
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            do {
+                try TranslationHistoryExporter.export(history.entries, format: format, language: lang, to: url)
+                historyExportMessage = url.lastPathComponent
+            } catch {
+                historyExportMessage = error.localizedDescription
+            }
+        }
+    }
+
     private var aboutPage: some View {
         settingsPage(title: L10n.tabAbout(lang)) {
             AboutView(language: lang)
@@ -446,18 +774,32 @@ struct SettingsView: View {
         }
     }
 
-    private func settingsPage<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
+    private func settingsPage<Content: View>(title: String, @ViewBuilder content: @escaping () -> Content) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                Text(title)
-                    .font(.title2.bold())
-                content()
+                HStack(spacing: 10) {
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(Color.accentColor)
+                    Text(title)
+                        .font(.title2.bold())
+                    Spacer()
+                }
+                SettingsPanel { content() }
             }
-            .padding(24)
+            .padding(.horizontal, 28)
+            .padding(.vertical, 24)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .background(Color(nsColor: .windowBackgroundColor).opacity(0.72))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
+}
+
+private struct HistoryDayGroup: Identifiable {
+    let day: Date
+    var entries: [TranslationHistoryEntry]
+    var id: Date { day }
 }
 
 struct ExcludedAppRow: View {
@@ -557,9 +899,165 @@ private struct ShortcutKeyMonitor: NSViewRepresentable {
     }
 }
 
+private struct ModelOrderDropDelegate: DropDelegate {
+    let targetID: UUID
+    @Binding var models: [LLMModelConfiguration]
+    @Binding var draggedID: UUID?
+
+    func dropEntered(info: DropInfo) {
+        guard let draggedID, draggedID != targetID,
+            let from = models.firstIndex(where: { $0.id == draggedID }),
+            let to = models.firstIndex(where: { $0.id == targetID })
+        else { return }
+        withAnimation(.snappy) {
+            models.move(fromOffsets: IndexSet(integer: from), toOffset: to > from ? to + 1 : to)
+        }
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        draggedID = nil
+        return true
+    }
+}
+
+/// Editable row for one provider in the user-defined fail-over order.
+struct LLMModelEditor: View {
+    @State private var draft: LLMModelConfiguration
+    @State private var isExpanded = false
+    let language: UILanguage
+    let save: (LLMModelConfiguration) -> Void
+    let remove: () -> Void
+
+    init(
+        model: LLMModelConfiguration,
+        language: UILanguage,
+        save: @escaping (LLMModelConfiguration) -> Void,
+        remove: @escaping () -> Void
+    ) {
+        var initialDraft = model
+        // Older saved configurations used an empty string to mean the
+        // built-in prompt. Show the actual default in the editor so it can be
+        // reviewed and modified without asking the user to reconstruct it.
+        if initialDraft.systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            initialDraft.systemPrompt = LLMTranslationPrompt.defaultSystemPrompt
+        }
+        _draft = State(initialValue: initialDraft)
+        self.language = language
+        self.save = save
+        self.remove = remove
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Button {
+                withAnimation(.snappy) { isExpanded.toggle() }
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "line.3.horizontal")
+                        .foregroundStyle(.tertiary)
+                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 10)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(draft.name.isEmpty ? L10n.modelPlaceholder(language) : draft.name)
+                            .font(.subheadline.weight(.semibold))
+                        if !draft.model.isEmpty {
+                            Text(draft.model)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    Spacer()
+                    Circle()
+                        .fill(draft.enabled ? Color.green : Color.secondary.opacity(0.35))
+                        .frame(width: 8, height: 8)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(draft.name.isEmpty ? L10n.modelPlaceholder(language) : draft.name)
+
+            if isExpanded {
+                Divider()
+                VStack(alignment: .leading, spacing: 10) {
+                SettingsRow(label: L10n.modelName(language)) {
+                    TextField(L10n.modelPlaceholder(language), text: $draft.name).textFieldStyle(.roundedBorder)
+                }
+                SettingsRow(label: L10n.provider(language)) {
+                    Picker("", selection: $draft.provider) {
+                        ForEach(LLMProvider.allCases) { provider in
+                            Text(L10n.providerName(provider, language)).tag(provider)
+                        }
+                    }
+                    .labelsHidden()
+                    .onChange(of: draft.provider) { _, provider in
+                        if draft.baseURL.isEmpty || draft.baseURL == LLMProvider.openAICompatible.defaultBaseURL {
+                            draft.baseURL = provider.defaultBaseURL
+                        }
+                        if draft.model.isEmpty { draft.model = provider.defaultModel }
+                    }
+                }
+                SettingsRow(label: L10n.endpointURL(language)) {
+                    TextField(L10n.urlPlaceholder(language), text: $draft.baseURL).textFieldStyle(.roundedBorder)
+                }
+                SettingsRow(label: L10n.apiKey(language)) {
+                    SecureField("", text: $draft.apiKey).textFieldStyle(.roundedBorder)
+                }
+                SettingsRow(label: L10n.modelID(language)) {
+                    TextField(L10n.modelIDPlaceholder(language), text: $draft.model).textFieldStyle(.roundedBorder)
+                }
+                SettingsRow(label: L10n.thinkingMode(language)) {
+                    Picker("", selection: $draft.thinking) {
+                        ForEach(LLMThinkingMode.allCases) { mode in
+                            Text(thinkingName(mode)).tag(mode)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                }
+                SettingsRow(label: L10n.prompt(language)) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        TextEditor(text: $draft.systemPrompt)
+                            .frame(minHeight: 110)
+                            .overlay(RoundedRectangle(cornerRadius: 5).stroke(Color.secondary.opacity(0.25)))
+                        HStack {
+                            Text(L10n.promptHint(language))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Button(L10n.restoreDefaultPrompt(language)) {
+                                draft.systemPrompt = LLMTranslationPrompt.defaultSystemPrompt
+                            }
+                            .controlSize(.small)
+                        }
+                    }
+                }
+                HStack {
+                    Toggle(L10n.modelEnabled(language), isOn: $draft.enabled).toggleStyle(.checkbox)
+                    Spacer()
+                    Button(L10n.removeModel(language), role: .destructive, action: remove)
+                }
+                }
+                .padding(.top, 2)
+            }
+        }
+        .onChange(of: draft) { _, updated in save(updated) }
+    }
+
+    private func thinkingName(_ mode: LLMThinkingMode) -> String {
+        switch mode {
+        case .automatic: return L10n.thinkingAutomatic(language)
+        case .nonThinking: return L10n.thinkingOff(language)
+        case .thinking: return L10n.thinkingOn(language)
+        }
+    }
+}
+
 struct LanguageResourceRow: View {
     let language: UILanguage
-    let holder: TranslationSessionHolder
+    let sourceLanguage: Language
+    let targetLanguage: Language
 
     private enum PackState {
         case checking, installed, unsupported, available, downloading, failed
@@ -567,6 +1065,16 @@ struct LanguageResourceRow: View {
 
     @State private var packState: PackState = .checking
     @State private var progressText = ""
+    @State private var configuration: TranslationSession.Configuration
+    @State private var requested = false
+
+    init(language: UILanguage, sourceLanguage: Language, targetLanguage: Language) {
+        self.language = language
+        self.sourceLanguage = sourceLanguage
+        self.targetLanguage = targetLanguage
+        _configuration = State(
+            initialValue: TranslationSession.Configuration(source: sourceLanguage.locale, target: targetLanguage.locale))
+    }
 
     var body: some View {
         Group {
@@ -575,10 +1083,10 @@ struct LanguageResourceRow: View {
                 Text(L10n.languagesChecking(language))
                     .foregroundStyle(.secondary)
             case .installed:
-                Text(L10n.languagesReady(language))
+                Text(L10n.languagesReady(sourceLanguage, targetLanguage, language))
                     .foregroundStyle(.secondary)
             case .unsupported:
-                Text(L10n.languagesUnsupported(language))
+                Text(L10n.languagesUnsupported(sourceLanguage, targetLanguage, language))
                     .foregroundStyle(.secondary)
             case .available:
                 Button(L10n.downloadLanguage(language)) {
@@ -595,18 +1103,19 @@ struct LanguageResourceRow: View {
                 }
             }
         }
-        .task { await refreshAvailability() }
-    }
-
-    private func startDownload() {
-        packState = .downloading
-        progressText = L10n.languagesPreparing(language)
-        Task {
+        .task(id: "\(sourceLanguage.rawValue)-\(targetLanguage.rawValue)") {
+            requested = false
+            configuration = TranslationSession.Configuration(source: sourceLanguage.locale, target: targetLanguage.locale)
+            await refreshAvailability()
+        }
+        .translationTask(configuration) { session in
+            guard requested else { return }
             do {
-                try await holder.prepareTranslation()
+                try await session.prepareTranslation()
                 progressText = L10n.languagesDownloading(language)
+                let availability = LanguageAvailability()
                 for _ in 0..<120 {
-                    let state = await holder.languageAvailability()
+                    let state = await availability.status(from: sourceLanguage.locale, to: targetLanguage.locale)
                     if state == .installed {
                         packState = .installed
                         return
@@ -617,7 +1126,7 @@ struct LanguageResourceRow: View {
                     }
                     try await Task.sleep(for: .seconds(1))
                 }
-                progressText = L10n.languagesStillDownloading(language)
+                progressText = L10n.languagesStillDownloading(sourceLanguage, targetLanguage, language)
                 packState = .failed
             } catch {
                 progressText = L10n.languagesDownloadFailed(language)
@@ -626,8 +1135,15 @@ struct LanguageResourceRow: View {
         }
     }
 
+    private func startDownload() {
+        requested = true
+        packState = .downloading
+        progressText = L10n.languagesPreparing(language)
+        configuration.invalidate()
+    }
+
     private func refreshAvailability() async {
-        let state = await holder.languageAvailability()
+        let state = await LanguageAvailability().status(from: sourceLanguage.locale, to: targetLanguage.locale)
         switch state {
         case .installed: packState = .installed
         case .unsupported: packState = .unsupported

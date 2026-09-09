@@ -60,6 +60,21 @@ enum TranslationSpeed: Int, CaseIterable {
     case relaxed = 700
 }
 
+/// Selects the engine used for new translation requests.
+enum TranslationBackend: String, CaseIterable, Codable, Identifiable, Sendable, Hashable {
+    case local
+    case languageModel = "language-model"
+
+    var id: String { rawValue }
+
+    func displayName(for lang: UILanguage) -> String {
+        switch self {
+        case .local: return L10n.backendLocal(lang)
+        case .languageModel: return L10n.backendLanguageModel(lang)
+        }
+    }
+}
+
 enum TranslationTiming: String, CaseIterable, Sendable {
     case pause = "Pause"
     case completeSentence = "Complete Sentence"
@@ -71,6 +86,47 @@ enum TranslationTiming: String, CaseIterable, Sendable {
         case .completeSentence: return L10n.timingCompleteSentence(lang)
         case .shortcut: return L10n.timingShortcut(lang)
         }
+    }
+}
+
+/// The translation events that may trigger text-to-speech. Unlike the
+/// translation timing itself, users may select more than one event.
+enum SpeechTrigger: Int, CaseIterable, Identifiable, Sendable {
+    case pause = 1
+    case completeSentence = 2
+    case shortcut = 4
+
+    var id: Int { rawValue }
+
+    var translationTiming: TranslationTiming {
+        switch self {
+        case .pause: return .pause
+        case .completeSentence: return .completeSentence
+        case .shortcut: return .shortcut
+        }
+    }
+}
+
+struct SpeechTriggerSelection: OptionSet, Codable, Equatable, Sendable {
+    let rawValue: Int
+
+    static let pause = SpeechTriggerSelection(rawValue: SpeechTrigger.pause.rawValue)
+    static let completeSentence = SpeechTriggerSelection(rawValue: SpeechTrigger.completeSentence.rawValue)
+    static let shortcut = SpeechTriggerSelection(rawValue: SpeechTrigger.shortcut.rawValue)
+    static let all: SpeechTriggerSelection = [.pause, .completeSentence, .shortcut]
+
+    init(rawValue: Int) { self.rawValue = rawValue }
+
+    init(timing: TranslationTiming) {
+        switch timing {
+        case .pause: self = .pause
+        case .completeSentence: self = .completeSentence
+        case .shortcut: self = .shortcut
+        }
+    }
+
+    static func normalized(rawValue: Int) -> SpeechTriggerSelection {
+        SpeechTriggerSelection(rawValue: rawValue & SpeechTriggerSelection.all.rawValue)
     }
 }
 
@@ -174,6 +230,41 @@ struct ReplaceShortcut: Equatable, Sendable {
         didSet { defaults.set(overlayBehavior.rawValue, forKey: "overlayBehavior") }
     }
     @Published var uiLanguage: UILanguage { didSet { defaults.set(uiLanguage.rawValue, forKey: "uiLanguage") } }
+    @Published var sourceLanguage: Language {
+        didSet {
+            defaults.set(sourceLanguage.rawValue, forKey: "sourceLanguage")
+            onTranslationSettingsChanged?()
+        }
+    }
+    @Published var targetLanguage: Language {
+        didSet {
+            defaults.set(targetLanguage.rawValue, forKey: "targetLanguage")
+            onTranslationSettingsChanged?()
+        }
+    }
+    @Published var translationBackend: TranslationBackend {
+        didSet {
+            defaults.set(translationBackend.rawValue, forKey: "translationBackend")
+            onTranslationSettingsChanged?()
+        }
+    }
+    @Published var llmModels: [LLMModelConfiguration] {
+        didSet {
+            persistLLMModels()
+            onTranslationSettingsChanged?()
+        }
+    }
+    @Published var llmFallbackTimeout: Double {
+        didSet {
+            let normalized = Self.clampLLMTimeout(llmFallbackTimeout)
+            if llmFallbackTimeout != normalized {
+                llmFallbackTimeout = normalized
+                return
+            }
+            defaults.set(llmFallbackTimeout, forKey: "llmFallbackTimeout")
+            onTranslationSettingsChanged?()
+        }
+    }
     @Published var translationSpeed: Int {
         didSet {
             let normalized = TranslationSpeed(rawValue: translationSpeed)?.rawValue ?? TranslationSpeed.balanced.rawValue
@@ -184,10 +275,37 @@ struct ReplaceShortcut: Equatable, Sendable {
             defaults.set(translationSpeed, forKey: "translationSpeed")
         }
     }
+    @Published var historyRetention: HistoryRetention {
+        didSet {
+            defaults.set(historyRetention.rawValue, forKey: "historyRetention")
+            onHistoryRetentionChanged?()
+        }
+    }
     @Published var translationTiming: TranslationTiming {
         didSet { defaults.set(translationTiming.rawValue, forKey: "translationTiming") }
     }
-    @Published var speechEnabled: Bool { didSet { defaults.set(speechEnabled, forKey: "speechEnabled") } }
+    @Published var speechEnabled: Bool {
+        didSet {
+            defaults.set(speechEnabled, forKey: "speechEnabled")
+            if speechEnabled, speechTriggers.isEmpty {
+                speechTriggers = .all
+            } else if !speechEnabled, !speechTriggers.isEmpty {
+                speechTriggers = []
+            }
+        }
+    }
+    @Published var speechTriggers: SpeechTriggerSelection {
+        didSet {
+            let normalized = SpeechTriggerSelection.normalized(rawValue: speechTriggers.rawValue)
+            if speechTriggers != normalized {
+                speechTriggers = normalized
+                return
+            }
+            defaults.set(speechTriggers.rawValue, forKey: "speechTriggers")
+            let enabled = !speechTriggers.isEmpty
+            if speechEnabled != enabled { speechEnabled = enabled }
+        }
+    }
     @Published var replaceOriginal: Bool { didSet { defaults.set(replaceOriginal, forKey: "replaceOriginal") } }
     @Published var copyTranslation: Bool { didSet { defaults.set(copyTranslation, forKey: "copyTranslation") } }
     @Published var replaceShortcut: ReplaceShortcut {
@@ -205,6 +323,11 @@ struct ReplaceShortcut: Equatable, Sendable {
     @Published var excludedBundleIDs: Set<String> {
         didSet { defaults.set(Array(excludedBundleIDs), forKey: "excludedBundleIDs") }
     }
+    /// Assigned by AppState after its translation pipeline has been built.
+    var onTranslationSettingsChanged: (() -> Void)?
+    /// Reloads and immediately prunes local history after the user shortens
+    /// the selected retention period.
+    var onHistoryRetentionChanged: (() -> Void)?
     private let defaults = UserDefaults.standard
 
     init() {
@@ -228,13 +351,31 @@ struct ReplaceShortcut: Equatable, Sendable {
         }
         uiLanguage =
             UILanguage(rawValue: defaults.string(forKey: "uiLanguage") ?? UILanguage.chinese.rawValue) ?? .chinese
+        let storedSource = Self.readLanguage(defaults.string(forKey: "sourceLanguage"), fallback: .chinese)
+        let storedTarget = Self.readLanguage(defaults.string(forKey: "targetLanguage"), fallback: .english)
+        sourceLanguage = storedSource
+        targetLanguage = storedTarget == storedSource ? (storedSource == .english ? .chinese : .english) : storedTarget
+        translationBackend = TranslationBackend(rawValue: defaults.string(forKey: "translationBackend") ?? "") ?? .local
+        llmModels = Self.readLLMModels(defaults.data(forKey: "llmModels"))
+        llmFallbackTimeout = Self.clampLLMTimeout(defaults.object(forKey: "llmFallbackTimeout") as? Double ?? 8)
         let speedValue = TranslationSpeed(rawValue: defaults.object(forKey: "translationSpeed") as? Int ?? 450)?.rawValue
             ?? TranslationSpeed.balanced.rawValue
         translationSpeed = speedValue
+        historyRetention = HistoryRetention(rawValue: defaults.string(forKey: "historyRetention") ?? "") ?? .sevenDays
         translationTiming =
             TranslationTiming(rawValue: defaults.string(forKey: "translationTiming") ?? TranslationTiming.pause.rawValue)
             ?? .pause
-        speechEnabled = defaults.object(forKey: "speechEnabled") as? Bool ?? false
+        let legacySpeechEnabled = defaults.object(forKey: "speechEnabled") as? Bool ?? false
+        let initialSpeechTriggers: SpeechTriggerSelection
+        if let storedSpeechTriggers = defaults.object(forKey: "speechTriggers") as? Int {
+            initialSpeechTriggers = SpeechTriggerSelection.normalized(rawValue: storedSpeechTriggers)
+        } else {
+            // Preserve the old behavior for existing users: it only spoke
+            // completed sentences and shortcut-triggered translations.
+            initialSpeechTriggers = legacySpeechEnabled ? [.completeSentence, .shortcut] : []
+        }
+        speechTriggers = initialSpeechTriggers
+        speechEnabled = !initialSpeechTriggers.isEmpty
         replaceOriginal = defaults.object(forKey: "replaceOriginal") as? Bool ?? false
         copyTranslation = defaults.object(forKey: "copyTranslation") as? Bool ?? false
         replaceShortcut = Self.loadShortcut(
@@ -251,9 +392,51 @@ struct ReplaceShortcut: Equatable, Sendable {
                 "com.agilebits.onepassword7", "com.apple.keychainaccess", "com.apple.dt.Xcode", "com.openai.codex",
                 "cc.kristar.floattrans",
             ])
+        restoreAPIKeysFromKeychain()
         if defaults.object(forKey: "translationSpeed") == nil {
             defaults.set(speedValue, forKey: "translationSpeed")
         }
+        if defaults.object(forKey: "historyRetention") == nil {
+            defaults.set(historyRetention.rawValue, forKey: "historyRetention")
+        }
+        if defaults.object(forKey: "sourceLanguage") == nil { defaults.set(sourceLanguage.rawValue, forKey: "sourceLanguage") }
+        if defaults.object(forKey: "targetLanguage") == nil { defaults.set(targetLanguage.rawValue, forKey: "targetLanguage") }
+        if defaults.object(forKey: "translationBackend") == nil {
+            defaults.set(translationBackend.rawValue, forKey: "translationBackend")
+        }
+        if defaults.object(forKey: "llmFallbackTimeout") == nil {
+            defaults.set(llmFallbackTimeout, forKey: "llmFallbackTimeout")
+        }
+        if defaults.object(forKey: "speechTriggers") == nil {
+            defaults.set(speechTriggers.rawValue, forKey: "speechTriggers")
+        }
+        if defaults.object(forKey: "speechEnabled") == nil {
+            defaults.set(speechEnabled, forKey: "speechEnabled")
+        }
+        migrateLegacyAPIKeysToKeychain()
+    }
+
+    func updateLLMModel(_ model: LLMModelConfiguration) {
+        guard let index = llmModels.firstIndex(where: { $0.id == model.id }) else { return }
+        var updated = model
+        // Timeout is global so one clear setting governs fail-over order.
+        updated.timeoutSeconds = 0
+        llmModels[index] = updated
+    }
+
+    func addLLMModel(_ model: LLMModelConfiguration) {
+        var model = model
+        model.timeoutSeconds = 0
+        llmModels.append(model)
+    }
+
+    func removeLLMModel(id: UUID) {
+        llmModels.removeAll { $0.id == id }
+        try? KeychainStore().deleteAPIKey(forModelID: id)
+    }
+
+    func moveLLMModels(from offsets: IndexSet, to destination: Int) {
+        llmModels.move(fromOffsets: offsets, toOffset: destination)
     }
 
     private static func loadShortcut(
@@ -270,6 +453,55 @@ struct ReplaceShortcut: Equatable, Sendable {
     private func persistShortcut(_ shortcut: ReplaceShortcut, keyCodeKey: String, modifiersKey: String) {
         defaults.set(Int(shortcut.keyCode), forKey: keyCodeKey)
         defaults.set(Int(shortcut.carbonModifiers), forKey: modifiersKey)
+    }
+
+    private static func readLanguage(_ rawValue: String?, fallback: Language) -> Language {
+        guard let rawValue, let value = Language(rawValue: rawValue) else { return fallback }
+        return value
+    }
+
+    private static func readLLMModels(_ data: Data?) -> [LLMModelConfiguration] {
+        guard let data else { return [] }
+        return (try? JSONDecoder().decode([LLMModelConfiguration].self, from: data)) ?? []
+    }
+
+    private func persistLLMModels() {
+        var publicModels = llmModels
+        let keychain = KeychainStore()
+        for index in publicModels.indices {
+            let model = publicModels[index]
+            if model.apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                try? keychain.deleteAPIKey(forModelID: model.id)
+            } else {
+                try? keychain.setAPIKey(model.apiKey, forModelID: model.id)
+            }
+            publicModels[index].apiKey = ""
+            publicModels[index].timeoutSeconds = 0
+        }
+        guard let data = try? JSONEncoder().encode(publicModels) else { return }
+        defaults.set(data, forKey: "llmModels")
+    }
+
+    private func restoreAPIKeysFromKeychain() {
+        let keychain = KeychainStore()
+        for index in llmModels.indices {
+            if let value = try? keychain.apiKey(forModelID: llmModels[index].id), !value.isEmpty {
+                llmModels[index].apiKey = value
+            }
+        }
+    }
+
+    private func migrateLegacyAPIKeysToKeychain() {
+        // Models written by earlier preview builds may contain a plaintext
+        // key in the preferences blob. Import it once and immediately rewrite
+        // the public snapshot with an empty key.
+        guard llmModels.contains(where: { !$0.apiKey.isEmpty }) else { return }
+        persistLLMModels()
+    }
+
+    private static func clampLLMTimeout(_ value: Double) -> Double {
+        guard value.isFinite else { return 8 }
+        return min(max(value, 1), 120)
     }
 
     private func updateLoginItem(_ enabled: Bool) {

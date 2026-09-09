@@ -55,8 +55,11 @@ struct MenuBarMenu: View {
     let permission = AccessibilityPermissionManager()
     let monitor = AccessibilityMonitor()
     let input = InputCoordinator()
+    let llmRouter: LLMModelRouter
+    let translationService: TranslationService
     let coordinator: TranslationCoordinator
-    let translationHolder = TranslationSessionHolder()
+    let translationHolder: TranslationSessionHolder
+    let history: TranslationHistoryController
     let overlay = OverlayCoordinator()
     let speech: SpeechPerforming
     private let speechPolicy = SpeechPolicyEvaluator()
@@ -72,17 +75,32 @@ struct MenuBarMenu: View {
         let enabledValue = store.enabled
         let trustedValue = AXIsProcessTrusted()
         let welcomeValue = !UserDefaults.standard.bool(forKey: "onboardingComplete")
+        let holder = TranslationSessionHolder()
+        let router = LLMModelRouter(models: store.llmModels, timeoutSeconds: store.llmFallbackTimeout)
+        let service = TranslationService(
+            localEngine: HostedTranslationEngine(holder: holder),
+            llmRouter: router,
+            backend: store.translationBackend,
+            models: store.llmModels,
+            timeoutSeconds: store.llmFallbackTimeout)
+        let historyController = TranslationHistoryController()
         settings = store
         enabled = enabledValue
         permissionGranted = trustedValue
         showWelcome = welcomeValue
-        coordinator = TranslationCoordinator(engine: HostedTranslationEngine(holder: translationHolder))
+        translationHolder = holder
+        llmRouter = router
+        translationService = service
+        coordinator = TranslationCoordinator(
+            engine: service, sourceLanguage: store.sourceLanguage, targetLanguage: store.targetLanguage)
+        history = historyController
         speech = SpeechService()
         NSLog("LiveEnglish startup trusted=%@ enabled=%@", String(trustedValue), String(enabledValue))
         DiagnosticLog.write("startup trusted=\(trustedValue) enabled=\(enabledValue)")
         logger.info("startup trusted=\(trustedValue, privacy: .public) enabled=\(enabledValue, privacy: .public)")
         input.isEnabled = enabled
         input.delayMilliseconds = settings.translationSpeed
+        input.sourceLanguage = settings.sourceLanguage
         input.timing = settings.translationTiming
         overlay.hideAfter = settings.hideAfter
         overlay.neverHide = settings.neverHide
@@ -96,6 +114,12 @@ struct MenuBarMenu: View {
         monitor.onFocusChanged = { [weak self] in self?.input.reset() }
         input.excludedBundleIDs = settings.excludedBundleIDs
         monitor.excludedBundleIDs = settings.excludedBundleIDs
+        monitor.sourceLanguage = settings.sourceLanguage
+        settings.onTranslationSettingsChanged = { [weak self] in self?.applyTranslationSettings() }
+        settings.onHistoryRetentionChanged = { [weak self] in
+            guard let self else { return }
+            self.history.reload(retention: self.settings.historyRetention)
+        }
         input.onSentence = { [weak self] text, sentenceKey, session, screen, snapshot in
             self?.translate(text, sentenceKey: sentenceKey, session: session, screen: screen, snapshot: snapshot)
         }
@@ -132,6 +156,8 @@ struct MenuBarMenu: View {
             }
         }
         refreshHotKeys()
+        applyTranslationSettings()
+        history.reload(retention: settings.historyRetention)
         if showWelcome {
             Task { @MainActor [weak self] in
                 try? await Task.sleep(for: .milliseconds(250))
@@ -141,7 +167,33 @@ struct MenuBarMenu: View {
     }
     func startTranslationHost() {
         guard translationHostWindow == nil else { return }
-        translationHostWindow = TranslationHostWindowController(holder: translationHolder)
+        translationHostWindow = TranslationHostWindowController(holder: translationHolder, settings: settings)
+    }
+
+    /// Applies a settings edit to the running pipeline. Direction, engine,
+    /// prompt/model order, and timeout all take effect on the next request;
+    /// existing work is invalidated so stale output cannot overwrite it.
+    func applyTranslationSettings() {
+        let source = settings.sourceLanguage
+        let target = settings.targetLanguage
+        let backend = settings.translationBackend
+        let timeout = settings.llmFallbackTimeout
+        let models = settings.llmModels
+        input.setSourceLanguage(source)
+        monitor.sourceLanguage = source
+        translationHolder.configure(source: source, target: target)
+        currentSession = nil
+        clearPendingAction()
+        overlay.hide()
+        speech.stop()
+        let coordinator = coordinator
+        let service = translationService
+        Task {
+            await coordinator.cancel()
+            await coordinator.setDirection(from: source, to: target)
+            await service.configure(backend: backend, models: models, timeoutSeconds: timeout)
+            await coordinator.clearCache()
+        }
     }
     func toggle() {
         enabled.toggle()
@@ -182,14 +234,14 @@ struct MenuBarMenu: View {
             return
         }
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 520, height: 480),
+            contentRect: NSRect(x: 0, y: 0, width: 840, height: 700),
             styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         window.title = L10n.settingsWindowTitle(settings.uiLanguage)
         let hosting = NSHostingView(rootView: SettingsView(state: self))
         hosting.sizingOptions = .minSize
         window.contentView = hosting
-        window.contentMinSize = NSSize(width: 520, height: 360)
-        window.setContentSize(NSSize(width: 520, height: 480))
+        window.contentMinSize = NSSize(width: 760, height: 520)
+        window.setContentSize(NSSize(width: 840, height: 700))
         window.center()
         window.isReleasedWhenClosed = false
         window.orderFrontRegardless()
@@ -216,6 +268,8 @@ struct MenuBarMenu: View {
     private func translate(
         _ text: String, sentenceKey: String, session: InputSessionID, screen: NSScreen?, snapshot: TextSnapshot
     ) {
+        let sourceLanguage = settings.sourceLanguage
+        let targetLanguage = settings.targetLanguage
         currentSession = session
         let previous = pendingAction
         let sameSentence = previous?.sentenceKey == sentenceKey && previous?.session == session
@@ -243,12 +297,25 @@ struct MenuBarMenu: View {
                 return
             }
             await MainActor.run {
-                self?.acceptTranslationResult(result, key: sentenceKey, session: session, screen: screen)
+                self?.acceptTranslationResult(
+                    result,
+                    sourceText: text,
+                    sourceLanguage: sourceLanguage,
+                    targetLanguage: targetLanguage,
+                    key: sentenceKey,
+                    session: session,
+                    screen: screen)
             }
         }
     }
     private func acceptTranslationResult(
-        _ result: String, key sentenceKey: String, session: InputSessionID, screen: NSScreen?
+        _ result: String,
+        sourceText: String,
+        sourceLanguage: Language,
+        targetLanguage: Language,
+        key sentenceKey: String,
+        session: InputSessionID,
+        screen: NSScreen?
     ) {
         guard currentSession == session, enabled else {
             DiagnosticLog.write("translation discarded stale session")
@@ -262,6 +329,12 @@ struct MenuBarMenu: View {
             pendingAction = PendingTranslationAction(
                 text: result, sourceWithTerminator: nil, session: session, sentenceKey: sentenceKey)
         }
+        history.record(
+            sourceText: sourceText,
+            translatedText: result,
+            sourceLanguage: sourceLanguage,
+            targetLanguage: targetLanguage,
+            retention: settings.historyRetention)
         DiagnosticLog.write("translation result accepted length=\(result.count)")
         logger.info("translation result accepted length=\(result.count, privacy: .public)")
         overlay.show(result, key: sentenceKey, on: screen)
@@ -271,13 +344,15 @@ struct MenuBarMenu: View {
     }
     private func speakIfAllowed(_ text: String) {
         guard speechPolicy.shouldSpeak(
-            speechEnabled: settings.speechEnabled, translationTiming: settings.translationTiming)
+            speechEnabled: settings.speechEnabled,
+            speechTriggers: settings.speechTriggers,
+            translationTiming: settings.translationTiming)
         else {
             DiagnosticLog.write("speech skipped")
             return
         }
         DiagnosticLog.write("speech speaking length=\(text.count)")
-        speech.speak(text)
+        speech.speak(text, language: settings.targetLanguage)
     }
     func setReplaceOriginal(_ enabled: Bool) {
         settings.replaceOriginal = enabled
@@ -461,7 +536,10 @@ struct WelcomeView: View {
                 Button("Allow Permission") { state.requestPermission() }.buttonStyle(.borderedProminent)
             }
             if step == 1 {
-                LanguageResourceRow(language: state.settings.uiLanguage, holder: state.translationHolder)
+                LanguageResourceRow(
+                    language: state.settings.uiLanguage,
+                    sourceLanguage: state.settings.sourceLanguage,
+                    targetLanguage: state.settings.targetLanguage)
             }
             Spacer()
             Button(step == 2 ? "Done" : "Continue") { if step < 2 { step += 1 } else { state.finishOnboarding() } }
@@ -472,20 +550,40 @@ struct WelcomeView: View {
 
 struct TranslationHostView: View {
     let holder: TranslationSessionHolder
-    @State private var configuration = TranslationSession.Configuration(
-        source: TranslationLanguages.source, target: TranslationLanguages.target)
+    @ObservedObject var settings: SettingsStore
+    @State private var configuration: TranslationSession.Configuration
+
+    init(holder: TranslationSessionHolder, settings: SettingsStore) {
+        self.holder = holder
+        self.settings = settings
+        _configuration = State(
+            initialValue: TranslationSession.Configuration(
+                source: settings.sourceLanguage.locale, target: settings.targetLanguage.locale))
+    }
 
     var body: some View {
-        Color.clear.frame(width: 1, height: 1).translationTask(configuration) { session in
-            holder.attach(session)
-        }
+        let source = settings.sourceLanguage
+        let target = settings.targetLanguage
+        Color.clear
+            .frame(width: 1, height: 1)
+            .onChange(of: settings.sourceLanguage) { _, _ in resetConfiguration() }
+            .onChange(of: settings.targetLanguage) { _, _ in resetConfiguration() }
+            .translationTask(configuration) { session in
+                holder.attach(session, source: source, target: target)
+            }
+    }
+
+    private func resetConfiguration() {
+        holder.configure(source: settings.sourceLanguage, target: settings.targetLanguage)
+        configuration = TranslationSession.Configuration(
+            source: settings.sourceLanguage.locale, target: settings.targetLanguage.locale)
     }
 }
 
 @MainActor final class TranslationHostWindowController {
     private let window: NSWindow
 
-    init(holder: TranslationSessionHolder) {
+    init(holder: TranslationSessionHolder, settings: SettingsStore) {
         let panel = NSPanel(
             contentRect: NSRect(x: -2000, y: -2000, width: 8, height: 8),
             styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
@@ -500,7 +598,7 @@ struct TranslationHostView: View {
         panel.backgroundColor = .clear
         panel.alphaValue = 0.01
         panel.ignoresMouseEvents = true
-        panel.contentView = NSHostingView(rootView: TranslationHostView(holder: holder))
+        panel.contentView = NSHostingView(rootView: TranslationHostView(holder: holder, settings: settings))
         panel.orderFrontRegardless()
         window = panel
     }

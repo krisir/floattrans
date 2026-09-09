@@ -14,34 +14,33 @@ protocol AudioContextDetecting: Sendable {
 }
 
 @MainActor protocol SpeechPerforming: AnyObject {
-    func speak(_ text: String)
+    func speak(_ text: String, language: Language)
     func stop()
 }
 
 struct SpeechPolicyEvaluator: Sendable {
-    func shouldSpeak(speechEnabled: Bool, translationTiming: TranslationTiming) -> Bool {
-        guard speechEnabled else { return false }
-        switch translationTiming {
-        case .completeSentence, .shortcut: return true
-        case .pause: return false
-        }
+    func shouldSpeak(
+        speechEnabled: Bool,
+        speechTriggers: SpeechTriggerSelection,
+        translationTiming: TranslationTiming
+    ) -> Bool {
+        speechEnabled && speechTriggers.contains(SpeechTriggerSelection(timing: translationTiming))
     }
 }
 
 @MainActor final class SpeechService: NSObject, SpeechPerforming, AVSpeechSynthesizerDelegate {
     private let synthesizer = AVSpeechSynthesizer()
-    private let englishVoice = AVSpeechSynthesisVoice(language: "en-US")
 
     override init() {
         super.init()
         synthesizer.delegate = self
     }
 
-    func speak(_ text: String) {
+    func speak(_ text: String, language: Language) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         let synthesizer = synthesizer
-        let voice = englishVoice
+        let voice = systemVoice(for: language)
         // Leave the Swift Task so AXCoreUtilities does not unsafeForcedSync from a concurrent job.
         DispatchQueue.main.async {
             synthesizer.stopSpeaking(at: .immediate)
@@ -50,6 +49,19 @@ struct SpeechPolicyEvaluator: Sendable {
             utterance.rate = 0.5
             utterance.volume = 1.0
             synthesizer.speak(utterance)
+        }
+    }
+
+    /// Prefer macOS's default voice for the selected target language. If its
+    /// exact regional variant is not installed, use another installed voice
+    /// for that language before allowing AVFoundation to choose a fallback.
+    private func systemVoice(for language: Language) -> AVSpeechSynthesisVoice? {
+        if let defaultVoice = AVSpeechSynthesisVoice(language: language.speechLocaleIdentifier) {
+            return defaultVoice
+        }
+        let languagePrefix = language.rawValue + "-"
+        return AVSpeechSynthesisVoice.speechVoices().first {
+            $0.language == language.rawValue || $0.language.hasPrefix(languagePrefix)
         }
     }
 

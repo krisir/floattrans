@@ -44,6 +44,9 @@ enum L10n {
     static func tabOverlay(_ lang: UILanguage) -> String {
         lang == .chinese ? "悬浮窗" : "Overlay"
     }
+    static func tabHistory(_ lang: UILanguage) -> String {
+        lang == .chinese ? "历史记录" : "History"
+    }
     static func tabPrivacy(_ lang: UILanguage) -> String {
         lang == .chinese ? "隐私" : "Privacy"
     }
@@ -73,11 +76,89 @@ enum L10n {
         lang == .chinese ? "打开系统设置" : "Open System Settings"
     }
 
+    static func translationBackend(_ lang: UILanguage) -> String {
+        lang == .chinese ? "翻译方式" : "Translation Engine"
+    }
+    static func backendLocal(_ lang: UILanguage) -> String {
+        lang == .chinese ? "macOS 本地翻译" : "macOS On-device"
+    }
+    static func backendLanguageModel(_ lang: UILanguage) -> String {
+        lang == .chinese ? "大语言模型 API" : "Language Model API"
+    }
+    static func sourceLanguage(_ lang: UILanguage) -> String {
+        lang == .chinese ? "源语言" : "Source Language"
+    }
+    static func targetLanguage(_ lang: UILanguage) -> String {
+        lang == .chinese ? "目标语言" : "Target Language"
+    }
+    static func languagePair(_ source: Language, _ target: Language, _ lang: UILanguage) -> String {
+        let sourceName = lang == .chinese ? source.chineseName : source.englishName
+        let targetName = lang == .chinese ? target.chineseName : target.englishName
+        return "\(sourceName) → \(targetName)"
+    }
+    static func modelSettings(_ lang: UILanguage) -> String {
+        lang == .chinese ? "大语言模型" : "Language Models"
+    }
+    static func modelSettingsHint(_ lang: UILanguage) -> String {
+        lang == .chinese ? "已启用模型会按顺序尝试；超时或失败时自动切换到下一项。" : "Enabled models are tried in order; a timeout or failure advances to the next model."
+    }
+    static func addModel(_ lang: UILanguage) -> String { lang == .chinese ? "添加模型" : "Add Model" }
+    static func removeModel(_ lang: UILanguage) -> String { lang == .chinese ? "删除模型" : "Remove Model" }
+    static func modelName(_ lang: UILanguage) -> String { lang == .chinese ? "名称" : "Name" }
+    static func provider(_ lang: UILanguage) -> String { lang == .chinese ? "服务商" : "Provider" }
+    static func providerName(_ provider: LLMProvider, _ lang: UILanguage) -> String {
+        switch provider {
+        case .openAICompatible: return lang == .chinese ? "OpenAI 兼容" : "OpenAI compatible"
+        case .anthropic: return lang == .chinese ? "Claude（Anthropic）" : "Claude (Anthropic)"
+        case .deepSeek: return "DeepSeek"
+        case .glm: return lang == .chinese ? "GLM（智谱）" : "GLM (Zhipu)"
+        case .custom: return lang == .chinese ? "自定义" : "Custom"
+        }
+    }
+    static func endpointURL(_ lang: UILanguage) -> String { "API URL" }
+    static func apiKey(_ lang: UILanguage) -> String { lang == .chinese ? "API 密钥" : "API Key" }
+    static func modelID(_ lang: UILanguage) -> String { lang == .chinese ? "模型名称" : "Model ID" }
+    static func prompt(_ lang: UILanguage) -> String { lang == .chinese ? "提示词" : "Prompt" }
+    static func promptHint(_ lang: UILanguage) -> String {
+        lang == .chinese
+            ? "已填入默认系统提示词；每次请求会自动附加当前源语言、目标语言和待翻译文本。"
+            : "The default system prompt is filled in. Each request also includes the selected languages and source text."
+    }
+    static func restoreDefaultPrompt(_ lang: UILanguage) -> String {
+        lang == .chinese ? "恢复默认提示词" : "Restore Default Prompt"
+    }
+    static func thinkingMode(_ lang: UILanguage) -> String { lang == .chinese ? "思考模式" : "Reasoning Mode" }
+    static func thinkingAutomatic(_ lang: UILanguage) -> String { lang == .chinese ? "自动" : "Automatic" }
+    static func thinkingOff(_ lang: UILanguage) -> String { lang == .chinese ? "非思考" : "Non-thinking" }
+    static func thinkingOn(_ lang: UILanguage) -> String { lang == .chinese ? "思考" : "Thinking" }
+    static func failoverTimeout(_ lang: UILanguage) -> String { lang == .chinese ? "切换超时" : "Fail-over Timeout" }
+    static func timeoutSeconds(_ lang: UILanguage, _ value: Int) -> String {
+        lang == .chinese ? "超过 \(value) 秒切换" : "Switch after \(value) sec"
+    }
+    static func apiKeyKeychainHint(_ lang: UILanguage) -> String {
+        lang == .chinese ? "API 密钥仅保存于此 Mac 的钥匙串。" : "API keys are stored only in this Mac's Keychain."
+    }
+    static func modelPlaceholder(_ lang: UILanguage) -> String { lang == .chinese ? "例如：DeepSeek 主模型" : "For example: Primary DeepSeek" }
+    static func urlPlaceholder(_ lang: UILanguage) -> String { "https://api.example.com/v1" }
+    static func modelIDPlaceholder(_ lang: UILanguage) -> String { lang == .chinese ? "例如：deepseek-chat" : "For example: deepseek-chat" }
+    static func promptPlaceholder(_ lang: UILanguage) -> String { lang == .chinese ? "留空使用默认翻译提示词" : "Leave empty to use the default translation prompt" }
+    static func noModels(_ lang: UILanguage) -> String { lang == .chinese ? "还没有配置模型。" : "No models configured." }
+    static func modelEnabled(_ lang: UILanguage) -> String { lang == .chinese ? "启用" : "Enabled" }
+    static func localTranslationPrivacy(_ lang: UILanguage) -> String {
+        lang == .chinese ? "本地翻译不会把输入内容发送到网络。" : "On-device translation does not send typed text over the network."
+    }
+    static func llmTranslationPrivacy(_ lang: UILanguage) -> String {
+        lang == .chinese ? "大模型模式会把输入内容发送到所选 API 服务商。" : "Language-model mode sends typed text to the selected API provider."
+    }
+
     static func translationDirection(_ lang: UILanguage) -> String {
         lang == .chinese ? "翻译方向" : "Direction"
     }
     static func translationDirectionValue(_ lang: UILanguage) -> String {
         lang == .chinese ? "中文 → 英文" : "Chinese → English"
+    }
+    static func translationDirectionValue(_ source: Language, _ target: Language, _ lang: UILanguage) -> String {
+        languagePair(source, target, lang)
     }
     static func translationSpeed(_ lang: UILanguage) -> String {
         lang == .chinese ? "翻译速度" : "Translation Speed"
@@ -93,6 +174,33 @@ enum L10n {
     }
     static func timingShortcut(_ lang: UILanguage) -> String {
         lang == .chinese ? "快捷键触发翻译" : "On Shortcut"
+    }
+    static func historyRetention(_ lang: UILanguage) -> String {
+        lang == .chinese ? "保存期限" : "Retention"
+    }
+    static func historyRetentionName(_ value: HistoryRetention, _ lang: UILanguage) -> String {
+        switch value {
+        case .oneDay: return lang == .chinese ? "1 天" : "1 Day"
+        case .sevenDays: return lang == .chinese ? "7 天" : "7 Days"
+        case .thirtyDays: return lang == .chinese ? "30 天" : "30 Days"
+        case .sixMonths: return lang == .chinese ? "6 个月" : "6 Months"
+        case .forever: return lang == .chinese ? "永久" : "Forever"
+        }
+    }
+    static func historyOriginal(_ lang: UILanguage) -> String { lang == .chinese ? "原文" : "Original" }
+    static func historyTranslation(_ lang: UILanguage) -> String { lang == .chinese ? "译文" : "Translation" }
+    static func historyIndex(_ lang: UILanguage) -> String { lang == .chinese ? "序号" : "No." }
+    static func historyExport(_ lang: UILanguage) -> String { lang == .chinese ? "导出历史记录" : "Export History" }
+    static func historyExportMarkdown(_ lang: UILanguage) -> String { lang == .chinese ? "导出 Markdown" : "Export Markdown" }
+    static func historyExportExcel(_ lang: UILanguage) -> String { lang == .chinese ? "导出 Excel" : "Export Excel" }
+    static func historyExportTitle(_ lang: UILanguage) -> String {
+        lang == .chinese ? "浮译历史记录" : "FloatTrans Translation History"
+    }
+    static func historyEmpty(_ lang: UILanguage) -> String {
+        lang == .chinese ? "暂时没有已完成的翻译记录。" : "No completed translations yet."
+    }
+    static func historyStorageHint(_ lang: UILanguage) -> String {
+        lang == .chinese ? "历史记录仅保存在这台 Mac 上。" : "History is stored only on this Mac."
     }
     static func translateShortcut(_ lang: UILanguage) -> String {
         lang == .chinese ? "翻译快捷键" : "Translate Shortcut"
@@ -112,8 +220,14 @@ enum L10n {
     static func languagesReady(_ lang: UILanguage) -> String {
         lang == .chinese ? "中文 → 英文 · 已就绪 ✓" : "Chinese → English · Ready ✓"
     }
+    static func languagesReady(_ source: Language, _ target: Language, _ lang: UILanguage) -> String {
+        lang == .chinese ? "\(languagePair(source, target, lang)) · 已就绪 ✓" : "\(languagePair(source, target, lang)) · Ready ✓"
+    }
     static func languagesUnsupported(_ lang: UILanguage) -> String {
         lang == .chinese ? "此 Mac 不支持中文 → 英文" : "Chinese → English is not supported on this Mac"
+    }
+    static func languagesUnsupported(_ source: Language, _ target: Language, _ lang: UILanguage) -> String {
+        lang == .chinese ? "此 Mac 不支持 \(languagePair(source, target, lang))" : "\(languagePair(source, target, lang)) is not supported on this Mac"
     }
     static func downloadLanguage(_ lang: UILanguage) -> String {
         lang == .chinese ? "下载语言" : "Download Languages"
@@ -129,6 +243,9 @@ enum L10n {
     }
     static func languagesStillDownloading(_ lang: UILanguage) -> String {
         lang == .chinese ? "下载仍在进行，请稍后在系统设置中查看。" : "Download still in progress. Check Language & Region."
+    }
+    static func languagesStillDownloading(_ source: Language, _ target: Language, _ lang: UILanguage) -> String {
+        lang == .chinese ? "\(languagePair(source, target, lang)) 仍在下载，请稍后查看系统设置。" : "\(languagePair(source, target, lang)) is still downloading. Check System Settings later."
     }
     static func languagesDownloadFailed(_ lang: UILanguage) -> String {
         lang == .chinese ? "语言下载未完成。" : "Language download was not completed."
@@ -167,10 +284,40 @@ enum L10n {
     static func readTranslationsAloud(_ lang: UILanguage) -> String {
         lang == .chinese ? "朗读翻译结果" : "Read Translations Aloud"
     }
-    static func autoSpeakTimingHint(_ lang: UILanguage) -> String {
-        lang == .chinese
-            ? "超时翻译时不会朗读。请改用完整句子翻译或快捷键触发翻译。"
-            : "On Pause does not speak. Use Complete Sentence or On Shortcut to hear translations."
+    static func speechTimingAll(_ lang: UILanguage) -> String {
+        lang == .chinese ? "全部时机" : "All Translation Events"
+    }
+    static func speechTimingNone(_ lang: UILanguage) -> String {
+        lang == .chinese ? "不朗读" : "Never"
+    }
+    static func speechTimingPause(_ lang: UILanguage) -> String {
+        lang == .chinese ? "超时翻译" : "On Pause"
+    }
+    static func speechTimingCompleteSentence(_ lang: UILanguage) -> String {
+        lang == .chinese ? "完整句子翻译" : "Complete Sentence"
+    }
+    static func speechTimingShortcut(_ lang: UILanguage) -> String {
+        lang == .chinese ? "快捷键触发翻译" : "On Shortcut"
+    }
+    static func speechTimingSummary(_ selection: SpeechTriggerSelection, _ lang: UILanguage) -> String {
+        if selection.isEmpty { return speechTimingNone(lang) }
+        if selection == .all { return speechTimingAll(lang) }
+        return SpeechTrigger.allCases.compactMap { trigger in
+            let triggerSelection = SpeechTriggerSelection(rawValue: trigger.rawValue)
+            guard selection.contains(triggerSelection) else { return nil }
+            switch trigger {
+            case .pause: return speechTimingPause(lang)
+            case .completeSentence: return speechTimingCompleteSentence(lang)
+            case .shortcut: return speechTimingShortcut(lang)
+            }
+        }
+        .joined(separator: lang == .chinese ? "、" : ", ")
+    }
+    static func speechVoiceHint(_ target: Language, _ lang: UILanguage) -> String {
+        let languageName = lang == .chinese ? target.chineseName : target.englishName
+        return lang == .chinese
+            ? "朗读会使用此 Mac 上\(languageName)的默认系统语音。"
+            : "Speech uses this Mac’s default \(languageName) system voice."
     }
 
     static func groupPosition(_ lang: UILanguage) -> String {
