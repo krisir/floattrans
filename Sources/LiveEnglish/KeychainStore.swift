@@ -26,6 +26,14 @@ public enum KeychainStoreError: Error, Equatable, LocalizedError, Sendable {
         }
     }
 }
+/// Stores LLM API keys. Production uses macOS Keychain; tests can substitute
+/// an in-memory fake so SettingsStore can skip Keychain when using local translation.
+protocol APIKeyStore: Sendable {
+    func setAPIKey(_ value: String?, forModelID id: UUID) throws
+    func apiKey(forModelID id: UUID) throws -> String?
+    func deleteAPIKey(forModelID id: UUID) throws
+}
+
 /// A small, synchronous wrapper around macOS Keychain generic-password
 /// items. API keys should be stored here instead of in UserDefaults or a
 /// Codable settings blob.
@@ -33,7 +41,7 @@ public enum KeychainStoreError: Error, Equatable, LocalizedError, Sendable {
 /// The wrapper is a value type and does not retain secret data. Each method
 /// talks to Security.framework directly, which also keeps the API usable from
 /// a ``@MainActor`` settings store without introducing an additional actor.
-public struct KeychainStore: Sendable {
+public struct KeychainStore: APIKeyStore, Sendable {
     /// The app's bundle identifier is used in production. The fallback keeps
     /// command-line/unit-test invocations deterministic when no bundle exists.
     public static let defaultService = "cc.kristar.floattrans"

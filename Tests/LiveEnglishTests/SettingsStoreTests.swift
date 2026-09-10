@@ -356,6 +356,58 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(store.translateShortcut, .controlShiftT)
     }
 
+    func testLocalBackendDoesNotReadKeychainUntilLanguageModelIsSelected() throws {
+        let defaults = UserDefaults.standard
+        let saved = snapshot(defaults)
+        defer { restore(defaults, saved) }
+
+        for key in keys { defaults.removeObject(forKey: key) }
+        defaults.set(false, forKey: "launchAtLogin")
+
+        let modelID = UUID()
+        let model = LLMModelConfiguration(
+            id: modelID, name: "DeepSeek", baseURL: "https://api.deepseek.com/v1", model: "deepseek-chat")
+        defaults.set(try JSONEncoder().encode([model]), forKey: "llmModels")
+
+        let keychain = InMemoryAPIKeyStore()
+        try keychain.setAPIKey("sk-secret", forModelID: modelID)
+
+        let store = SettingsStore(keychain: keychain)
+        XCTAssertEqual(store.translationBackend, .local)
+        XCTAssertEqual(store.llmModels.first?.apiKey, "")
+        XCTAssertEqual(keychain.readIDs, [])
+        XCTAssertEqual(keychain.deleteIDs, [])
+        XCTAssertEqual(keychain.storedKey(for: modelID), "sk-secret")
+
+        store.translationBackend = .languageModel
+        XCTAssertEqual(store.llmModels.first?.apiKey, "sk-secret")
+        XCTAssertEqual(keychain.readIDs, [modelID])
+        XCTAssertEqual(keychain.storedKey(for: modelID), "sk-secret")
+    }
+
+    func testLanguageModelBackendLoadsKeychainKeysOnLaunch() throws {
+        let defaults = UserDefaults.standard
+        let saved = snapshot(defaults)
+        defer { restore(defaults, saved) }
+
+        for key in keys { defaults.removeObject(forKey: key) }
+        defaults.set(false, forKey: "launchAtLogin")
+        defaults.set(TranslationBackend.languageModel.rawValue, forKey: "translationBackend")
+
+        let modelID = UUID()
+        let model = LLMModelConfiguration(
+            id: modelID, name: "DeepSeek", baseURL: "https://api.deepseek.com/v1", model: "deepseek-chat")
+        defaults.set(try JSONEncoder().encode([model]), forKey: "llmModels")
+
+        let keychain = InMemoryAPIKeyStore()
+        try keychain.setAPIKey("sk-on-launch", forModelID: modelID)
+
+        let store = SettingsStore(keychain: keychain)
+        XCTAssertEqual(store.translationBackend, .languageModel)
+        XCTAssertEqual(store.llmModels.first?.apiKey, "sk-on-launch")
+        XCTAssertEqual(keychain.readIDs, [modelID])
+    }
+
     private func snapshot(_ defaults: UserDefaults) -> [String: Any?] {
         Dictionary(uniqueKeysWithValues: keys.map { ($0, defaults.object(forKey: $0)) })
     }
@@ -368,6 +420,35 @@ final class SettingsStoreTests: XCTestCase {
                 defaults.removeObject(forKey: key)
             }
         }
+    }
+}
+
+private final class InMemoryAPIKeyStore: APIKeyStore, @unchecked Sendable {
+    private var keys: [UUID: String] = [:]
+    private(set) var readIDs: [UUID] = []
+    private(set) var deleteIDs: [UUID] = []
+
+    func setAPIKey(_ value: String?, forModelID id: UUID) throws {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if trimmed.isEmpty {
+            keys.removeValue(forKey: id)
+        } else {
+            keys[id] = trimmed
+        }
+    }
+
+    func apiKey(forModelID id: UUID) throws -> String? {
+        readIDs.append(id)
+        return keys[id]
+    }
+
+    func deleteAPIKey(forModelID id: UUID) throws {
+        deleteIDs.append(id)
+        keys.removeValue(forKey: id)
+    }
+
+    func storedKey(for id: UUID) -> String? {
+        keys[id]
     }
 }
 

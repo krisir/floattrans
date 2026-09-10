@@ -244,6 +244,9 @@ struct ReplaceShortcut: Equatable, Sendable {
     @Published var translationBackend: TranslationBackend {
         didSet {
             defaults.set(translationBackend.rawValue, forKey: "translationBackend")
+            if translationBackend == .languageModel {
+                ensureAPIKeysAvailable()
+            }
             onTranslationSettingsChanged?()
         }
     }
@@ -328,8 +331,13 @@ struct ReplaceShortcut: Equatable, Sendable {
     /// the selected retention period.
     var onHistoryRetentionChanged: (() -> Void)?
     private let defaults = UserDefaults.standard
+    private let keychain: any APIKeyStore
+    /// Keys stay in Keychain until language-model translation needs them, so
+    /// a local-translation launch does not prompt for Keychain access.
+    private var apiKeysLoaded = false
 
-    init() {
+    init(keychain: any APIKeyStore = KeychainStore()) {
+        self.keychain = keychain
         enabled = defaults.object(forKey: "enabled") as? Bool ?? true
         let storedHideAfter = defaults.object(forKey: "hideAfter") as? Double
         let hideAfterValue = min(max(storedHideAfter ?? 5, 5), 60)
@@ -391,7 +399,9 @@ struct ReplaceShortcut: Equatable, Sendable {
                 "com.agilebits.onepassword7", "com.apple.keychainaccess", "com.apple.dt.Xcode", "com.openai.codex",
                 "cc.kristar.floattrans",
             ])
-        restoreAPIKeysFromKeychain()
+        if translationBackend == .languageModel {
+            ensureAPIKeysAvailable()
+        }
         if defaults.object(forKey: "translationSpeed") == nil {
             defaults.set(speedValue, forKey: "translationSpeed")
         }
@@ -412,7 +422,6 @@ struct ReplaceShortcut: Equatable, Sendable {
         if defaults.object(forKey: "speechEnabled") == nil {
             defaults.set(speechEnabled, forKey: "speechEnabled")
         }
-        migrateLegacyAPIKeysToKeychain()
     }
 
     func updateLLMModel(_ model: LLMModelConfiguration) {
@@ -431,7 +440,7 @@ struct ReplaceShortcut: Equatable, Sendable {
 
     func removeLLMModel(id: UUID) {
         llmModels.removeAll { $0.id == id }
-        try? KeychainStore().deleteAPIKey(forModelID: id)
+        try? keychain.deleteAPIKey(forModelID: id)
     }
 
     func moveLLMModels(from offsets: IndexSet, to destination: Int) {
@@ -466,28 +475,44 @@ struct ReplaceShortcut: Equatable, Sendable {
 
     private func persistLLMModels() {
         var publicModels = llmModels
-        let keychain = KeychainStore()
-        for index in publicModels.indices {
-            let model = publicModels[index]
-            if model.apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                try? keychain.deleteAPIKey(forModelID: model.id)
-            } else {
-                try? keychain.setAPIKey(model.apiKey, forModelID: model.id)
+        if apiKeysLoaded {
+            for index in publicModels.indices {
+                let model = publicModels[index]
+                if model.apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    try? keychain.deleteAPIKey(forModelID: model.id)
+                } else {
+                    try? keychain.setAPIKey(model.apiKey, forModelID: model.id)
+                }
+                publicModels[index].apiKey = ""
+                publicModels[index].timeoutSeconds = 0
             }
-            publicModels[index].apiKey = ""
-            publicModels[index].timeoutSeconds = 0
+        } else {
+            for index in publicModels.indices {
+                publicModels[index].apiKey = ""
+                publicModels[index].timeoutSeconds = 0
+            }
         }
         guard let data = try? JSONEncoder().encode(publicModels) else { return }
         defaults.set(data, forKey: "llmModels")
     }
 
+    private func ensureAPIKeysAvailable() {
+        guard !apiKeysLoaded else { return }
+        apiKeysLoaded = true
+        restoreAPIKeysFromKeychain()
+        migrateLegacyAPIKeysToKeychain()
+    }
+
     private func restoreAPIKeysFromKeychain() {
-        let keychain = KeychainStore()
-        for index in llmModels.indices {
-            if let value = try? keychain.apiKey(forModelID: llmModels[index].id), !value.isEmpty {
-                llmModels[index].apiKey = value
+        var models = llmModels
+        var changed = false
+        for index in models.indices {
+            if let value = try? keychain.apiKey(forModelID: models[index].id), !value.isEmpty {
+                models[index].apiKey = value
+                changed = true
             }
         }
+        if changed { llmModels = models }
     }
 
     private func migrateLegacyAPIKeysToKeychain() {
