@@ -90,7 +90,19 @@ The General page contains the toggles for enabling live translation and launch-a
 
 ### Requirement: Translation page shows direction, speed, and language resources
 
-The 翻译 page shows the translation direction (中文 → 英文, read-only), the translation speed, and the language resource status. The selected translation speed SHALL be persisted and restored across app launches. On macOS 15 and later, the language-resource row SHALL be visible so the user can see installed, downloadable, or unsupported status.
+The 翻译 page SHALL show 源语言 / Source Language and 目标语言 / Target Language pickers so the user can choose the translation pair. It SHALL NOT show a separate read-only 翻译方向 / Direction summary row. The page SHALL also show the translation speed and the language resource status. The selected translation speed SHALL be persisted and restored across app launches. On macOS 15 and later, the language-resource row SHALL be visible so the user can see installed, downloadable, or unsupported status.
+
+#### Scenario: Direction summary is not shown
+- **WHEN** the user views the 翻译 page
+- **THEN** the page does not show a 翻译方向 / Direction row that restates the selected pair as read-only text
+
+#### Scenario: Source and target language pickers are shown
+- **WHEN** the user views the 翻译 page
+- **THEN** the page shows Source Language and Target Language pickers with the current stored pair
+
+#### Scenario: Changing source or target updates the pair
+- **WHEN** the user selects a different source or target language
+- **THEN** subsequent translations and language-resource status use the new pair, and the page still has no Direction summary row
 
 #### Scenario: Speed is a segmented control
 - **WHEN** the user views the 翻译 page

@@ -151,15 +151,6 @@ enum L10n {
         lang == .chinese ? "大模型模式会把输入内容发送到所选 API 服务商。" : "Language-model mode sends typed text to the selected API provider."
     }
 
-    static func translationDirection(_ lang: UILanguage) -> String {
-        lang == .chinese ? "翻译方向" : "Direction"
-    }
-    static func translationDirectionValue(_ lang: UILanguage) -> String {
-        lang == .chinese ? "中文 → 英文" : "Chinese → English"
-    }
-    static func translationDirectionValue(_ source: Language, _ target: Language, _ lang: UILanguage) -> String {
-        languagePair(source, target, lang)
-    }
     static func translationSpeed(_ lang: UILanguage) -> String {
         lang == .chinese ? "翻译速度" : "Translation Speed"
     }

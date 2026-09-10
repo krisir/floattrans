@@ -300,10 +300,6 @@ struct SettingsView: View {
                 .labelsHidden()
                 .frame(maxWidth: 220)
             }
-            SettingsRow(label: L10n.translationDirection(lang)) {
-                Text(L10n.translationDirectionValue(settings.sourceLanguage, settings.targetLanguage, lang))
-                    .foregroundStyle(.secondary)
-            }
             SettingsRow(label: L10n.translationSpeed(lang)) {
                 Picker(
                     "",
