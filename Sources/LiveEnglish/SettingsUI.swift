@@ -151,6 +151,7 @@ struct SettingsView: View {
     @State private var draggedModelID: UUID?
     @State private var historyExportMessage: String?
     @State private var confirmDeleteHistory = false
+    @State private var selectedSpeechLanguage: Language = .chinese
 
     init(state: AppState) {
         self.state = state
@@ -300,23 +301,22 @@ struct SettingsView: View {
                 .labelsHidden()
                 .frame(maxWidth: 220)
             }
-            SettingsRow(label: L10n.translationSpeed(lang)) {
-                Picker(
-                    "",
-                    selection: Binding(
-                        get: { state.settings.translationSpeed },
-                        set: {
-                            state.settings.translationSpeed = $0
-                            state.input.delayMilliseconds = $0
-                        })
-                ) {
-                    Text(L10n.speedFast(lang)).tag(300)
-                    Text(L10n.speedBalanced(lang)).tag(450)
-                    Text(L10n.speedRelaxed(lang)).tag(700)
+            SettingsRow(label: L10n.pauseCommitDelay(lang)) {
+                HStack(spacing: 8) {
+                    Slider(
+                        value: Binding(
+                            get: { settings.pauseCommitDelay },
+                            set: {
+                                settings.pauseCommitDelay = $0
+                                state.input.delayMilliseconds = Int($0 * 1_000)
+                            }),
+                        in: 0.5...2.0,
+                        step: 0.1)
+                    Text(L10n.pauseCommitDelayValue(settings.pauseCommitDelay, lang))
+                        .monospacedDigit()
+                        .frame(width: 54, alignment: .trailing)
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(maxWidth: 260)
+                .frame(maxWidth: 280)
             }
             SettingsRow(label: L10n.translationTiming(lang)) {
                 Picker(
@@ -410,6 +410,10 @@ struct SettingsView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .padding(.leading, 184)
+            SettingsRow(label: L10n.speechVoices(lang)) {
+                SpeechVoiceSettingsRow(
+                    language: $selectedSpeechLanguage, settings: settings, speech: state.speech, uiLanguage: lang)
+            }
         }
     }
 
@@ -772,6 +776,59 @@ struct SettingsView: View {
     }
 }
 
+private struct SpeechVoiceSettingsRow: View {
+    @Binding var language: Language
+    @ObservedObject var settings: SettingsStore
+    let speech: SpeechPerforming
+    let uiLanguage: UILanguage
+    @State private var options: [SpeechVoiceOption] = []
+
+    private var selectedIdentifier: Binding<String> {
+        Binding(
+            get: { settings.speechVoiceIdentifier(for: language) },
+            set: { settings.setSpeechVoiceIdentifier($0, for: language) })
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Picker("", selection: $language) {
+                ForEach(Language.allCases) { language in
+                    Text(languageName(language)).tag(language)
+                }
+            }
+            .labelsHidden()
+            .frame(width: 104)
+            Picker("", selection: selectedIdentifier) {
+                Text(L10n.speechSystemDefault(uiLanguage)).tag("")
+                if options.isEmpty {
+                    Text(L10n.speechNoVoices(uiLanguage)).tag("")
+                } else {
+                    ForEach(options) { option in
+                        Text(option.displayName(for: uiLanguage)).tag(option.identifier)
+                    }
+                }
+            }
+            .labelsHidden()
+            .frame(minWidth: 245, maxWidth: 330)
+            Button {
+                let chosen = settings.configuredSpeechVoice(for: language)
+                speech.speak(L10n.speechTestText(language, uiLanguage), language: language, voiceIdentifier: chosen)
+            } label: {
+                Label(L10n.speechTest(uiLanguage), systemImage: "play.circle")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+        }
+        .task(id: language.rawValue) {
+            options = SpeechVoiceCatalog.options(for: language)
+        }
+    }
+
+    private func languageName(_ language: Language) -> String {
+        uiLanguage == .chinese ? language.chineseName : language.englishName
+    }
+}
+
 private struct HistoryDayGroup: Identifiable {
     let day: Date
     var entries: [TranslationHistoryEntry]
@@ -972,7 +1029,16 @@ struct LLMModelEditor: View {
                             draft.baseURL = provider.defaultBaseURL
                         }
                         if draft.model.isEmpty { draft.model = provider.defaultModel }
+                        draft.apiProtocol = LLMAPIProtocol.defaultFor(provider)
                     }
+                }
+                SettingsRow(label: L10n.apiProtocol(language)) {
+                    Picker("", selection: $draft.apiProtocol) {
+                        ForEach(LLMAPIProtocol.allCases) { protocolType in
+                            Text(L10n.apiProtocolName(protocolType, language)).tag(protocolType)
+                        }
+                    }
+                    .labelsHidden()
                 }
                 SettingsRow(label: L10n.endpointURL(language)) {
                     TextField(L10n.urlPlaceholder(language), text: $draft.baseURL).textFieldStyle(.roundedBorder)

@@ -65,9 +65,6 @@ public enum LLMProvider: String, Codable, CaseIterable, Identifiable, Sendable, 
     public static var zhipu: LLMProvider { .glm }
     public static var customProvider: LLMProvider { .custom }
 
-    fileprivate var isAnthropic: Bool { self == .anthropic }
-    fileprivate var supportsReasoningEffort: Bool { self == .openAICompatible }
-
     public init(from decoder: Decoder) throws {
         let value = try decoder.singleValueContainer().decode(String.self).lowercased()
         switch value {
@@ -80,6 +77,28 @@ public enum LLMProvider: String, Codable, CaseIterable, Identifiable, Sendable, 
             throw DecodingError.dataCorruptedError(
                 in: try decoder.singleValueContainer(), debugDescription: "Unknown LLM provider \(value)")
         }
+    }
+}
+
+/// Wire format used by an individual model. Provider presets choose a safe
+/// default, while custom endpoints can explicitly select the protocol.
+public enum LLMAPIProtocol: String, Codable, CaseIterable, Identifiable, Sendable, Hashable {
+    case chatCompletions = "chat-completions"
+    case responses
+    case anthropicMessages = "anthropic-messages"
+
+    public var id: String { rawValue }
+
+    public var displayName: String {
+        switch self {
+        case .chatCompletions: return "OpenAI Chat Completions"
+        case .responses: return "OpenAI Responses"
+        case .anthropicMessages: return "Anthropic Messages"
+        }
+    }
+
+    static func defaultFor(_ provider: LLMProvider) -> LLMAPIProtocol {
+        provider == .anthropic ? .anthropicMessages : .chatCompletions
     }
 }
 
@@ -125,6 +144,7 @@ public struct LLMModelConfiguration: Codable, Equatable, Identifiable, Sendable 
     public var id: UUID
     public var name: String
     public var provider: LLMProvider
+    public var apiProtocol: LLMAPIProtocol
     /// A base URL or a complete endpoint URL. The router appends the protocol
     /// path when needed (`/chat/completions` or `/v1/messages`).
     public var baseURL: String
@@ -160,6 +180,7 @@ public struct LLMModelConfiguration: Codable, Equatable, Identifiable, Sendable 
         id: UUID = UUID(),
         name: String,
         provider: LLMProvider = .openAICompatible,
+        apiProtocol: LLMAPIProtocol? = nil,
         baseURL: String,
         apiKey: String = "",
         model: String,
@@ -171,6 +192,7 @@ public struct LLMModelConfiguration: Codable, Equatable, Identifiable, Sendable 
         self.id = id
         self.name = name
         self.provider = provider
+        self.apiProtocol = apiProtocol ?? LLMAPIProtocol.defaultFor(provider)
         self.baseURL = baseURL
         self.apiKey = apiKey
         self.model = model
@@ -186,6 +208,7 @@ public struct LLMModelConfiguration: Codable, Equatable, Identifiable, Sendable 
         id: UUID = UUID(),
         name: String,
         provider: LLMProvider = .openAICompatible,
+        apiProtocol: LLMAPIProtocol? = nil,
         baseURL: String,
         apiKey: String = "",
         model: String,
@@ -198,6 +221,7 @@ public struct LLMModelConfiguration: Codable, Equatable, Identifiable, Sendable 
             id: id,
             name: name,
             provider: provider,
+            apiProtocol: apiProtocol,
             baseURL: baseURL,
             apiKey: apiKey,
             model: model,
@@ -213,6 +237,7 @@ public struct LLMModelConfiguration: Codable, Equatable, Identifiable, Sendable 
         id: UUID = UUID(),
         name: String,
         provider: LLMProvider = .openAICompatible,
+        apiProtocol: LLMAPIProtocol? = nil,
         baseURL: URL,
         apiKey: String = "",
         model: String,
@@ -225,6 +250,7 @@ public struct LLMModelConfiguration: Codable, Equatable, Identifiable, Sendable 
             id: id,
             name: name,
             provider: provider,
+            apiProtocol: apiProtocol,
             baseURL: baseURL.absoluteString,
             apiKey: apiKey,
             model: model,
@@ -236,7 +262,7 @@ public struct LLMModelConfiguration: Codable, Equatable, Identifiable, Sendable 
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, provider, baseURL, apiKey, model, systemPrompt, thinking, enabled, timeoutSeconds
+        case id, name, provider, apiProtocol, baseURL, apiKey, model, systemPrompt, thinking, enabled, timeoutSeconds
     }
 
     /// Decoding is deliberately lenient so settings written by an older build
@@ -247,6 +273,8 @@ public struct LLMModelConfiguration: Codable, Equatable, Identifiable, Sendable 
         id = try values.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
         name = try values.decodeIfPresent(String.self, forKey: .name) ?? "Model"
         provider = try values.decodeIfPresent(LLMProvider.self, forKey: .provider) ?? .openAICompatible
+        apiProtocol = try values.decodeIfPresent(LLMAPIProtocol.self, forKey: .apiProtocol)
+            ?? LLMAPIProtocol.defaultFor(provider)
         baseURL = try values.decodeIfPresent(String.self, forKey: .baseURL) ?? ""
         apiKey = try values.decodeIfPresent(String.self, forKey: .apiKey) ?? ""
         model = try values.decodeIfPresent(String.self, forKey: .model) ?? ""
@@ -408,7 +436,7 @@ public actor LLMModelRouter: TranslationEngine {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         let apiKey = configuration.apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        if configuration.provider.isAnthropic {
+        if configuration.apiProtocol == .anthropicMessages {
             if !apiKey.isEmpty {
                 request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
             }
@@ -420,8 +448,16 @@ public actor LLMModelRouter: TranslationEngine {
                 let authorization = apiKey.lowercased().hasPrefix("bearer ") ? apiKey : "Bearer \(apiKey)"
                 request.setValue(authorization, forHTTPHeaderField: "Authorization")
             }
-            request.httpBody = try Self.encodeOpenAIRequest(
-                text: text, source: source, target: target, configuration: configuration)
+            switch configuration.apiProtocol {
+            case .chatCompletions:
+                request.httpBody = try Self.encodeOpenAIRequest(
+                    text: text, source: source, target: target, configuration: configuration)
+            case .responses:
+                request.httpBody = try Self.encodeResponsesRequest(
+                    text: text, source: source, target: target, configuration: configuration)
+            case .anthropicMessages:
+                preconditionFailure("Anthropic requests are handled above")
+            }
         }
 
         let (data, response) = try await session.data(for: request)
@@ -436,9 +472,11 @@ public actor LLMModelRouter: TranslationEngine {
 
         let translated: String
         do {
-            translated = configuration.provider.isAnthropic
-                ? try Self.decodeClaudeResponse(data)
-                : try Self.decodeOpenAIResponse(data)
+            switch configuration.apiProtocol {
+            case .chatCompletions: translated = try Self.decodeOpenAIResponse(data)
+            case .responses: translated = try Self.decodeResponsesResponse(data)
+            case .anthropicMessages: translated = try Self.decodeClaudeResponse(data)
+            }
         } catch let error as LLMTranslationError {
             throw error
         } catch {
@@ -495,8 +533,9 @@ private extension LLMModelRouter {
         let messages: [ChatMessage]
         let stream: Bool
         let reasoning_effort: String?
+        let thinking: ThinkingControl?
 
-        private enum CodingKeys: String, CodingKey { case model, messages, stream, reasoning_effort }
+        private enum CodingKeys: String, CodingKey { case model, messages, stream, reasoning_effort, thinking }
 
         func encode(to encoder: Encoder) throws {
             var container = encoder.container(keyedBy: CodingKeys.self)
@@ -504,7 +543,23 @@ private extension LLMModelRouter {
             try container.encode(messages, forKey: .messages)
             try container.encode(stream, forKey: .stream)
             try container.encodeIfPresent(reasoning_effort, forKey: .reasoning_effort)
+            try container.encodeIfPresent(thinking, forKey: .thinking)
         }
+    }
+
+    struct ResponsesRequest: Encodable {
+        let model: String
+        let instructions: String
+        let input: String
+        let reasoning: ResponsesReasoning?
+    }
+
+    struct ResponsesReasoning: Encodable {
+        let effort: String
+    }
+
+    struct ThinkingControl: Encodable {
+        let type: String
     }
 
     struct ClaudeRequest: Encodable {
@@ -586,6 +641,21 @@ private extension LLMModelRouter {
         let text: String?
     }
 
+    struct ResponsesResponse: Decodable {
+        let output_text: String?
+        let output: [ResponsesOutput]?
+    }
+
+    struct ResponsesOutput: Decodable {
+        let type: String?
+        let content: [ResponsesContent]?
+    }
+
+    struct ResponsesContent: Decodable {
+        let type: String?
+        let text: String?
+    }
+
     struct ErrorEnvelope: Decodable {
         let error: ErrorObject?
     }
@@ -607,7 +677,8 @@ private extension LLMModelRouter {
 
         var path = components.path
         while path.count > 1, path.hasSuffix("/") { path.removeLast() }
-        if configuration.provider.isAnthropic {
+        switch configuration.apiProtocol {
+        case .anthropicMessages:
             if !path.lowercased().hasSuffix("/messages") {
                 if path.isEmpty || path == "/" {
                     path = "/v1/messages"
@@ -617,11 +688,21 @@ private extension LLMModelRouter {
                     path += "/v1/messages"
                 }
             }
-        } else if !path.lowercased().hasSuffix("/chat/completions") {
-            if path.isEmpty || path == "/" {
-                path = "/chat/completions"
-            } else {
-                path += "/chat/completions"
+        case .responses:
+            if !path.lowercased().hasSuffix("/responses") {
+                if path.isEmpty || path == "/" {
+                    path = "/responses"
+                } else {
+                    path += "/responses"
+                }
+            }
+        case .chatCompletions:
+            if !path.lowercased().hasSuffix("/chat/completions") {
+                if path.isEmpty || path == "/" {
+                    path = "/chat/completions"
+                } else {
+                    path += "/chat/completions"
+                }
             }
         }
         components.path = path
@@ -643,18 +724,36 @@ private extension LLMModelRouter {
             ChatMessage(role: "system", content: system.isEmpty ? LLMTranslationPrompt.defaultSystemPrompt : system),
             ChatMessage(role: "user", content: prompt),
         ]
+        let effort = chatReasoningEffort(for: configuration)
+        let thinking = chatThinkingControl(for: configuration)
+        return try JSONEncoder().encode(
+            OpenAIRequest(
+                model: configuration.model,
+                messages: messages,
+                stream: false,
+                reasoning_effort: effort,
+                thinking: thinking))
+    }
+
+    static func encodeResponsesRequest(
+        text: String,
+        source: Language,
+        target: Language,
+        configuration: LLMModelConfiguration
+    ) throws -> Data {
+        let system = configuration.systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
         let effort: String?
-        if configuration.provider.supportsReasoningEffort {
-            switch configuration.thinking {
-            case .automatic: effort = nil
-            case .nonThinking: effort = "none"
-            case .thinking: effort = "high"
-            }
-        } else {
-            effort = nil
+        switch configuration.thinking {
+        case .automatic: effort = nil
+        case .nonThinking: effort = "none"
+        case .thinking: effort = "high"
         }
         return try JSONEncoder().encode(
-            OpenAIRequest(model: configuration.model, messages: messages, stream: false, reasoning_effort: effort))
+            ResponsesRequest(
+                model: configuration.model,
+                instructions: system.isEmpty ? LLMTranslationPrompt.defaultSystemPrompt : system,
+                input: translationPrompt(text: text, source: source, target: target),
+                reasoning: effort.map(ResponsesReasoning.init)))
     }
 
     static func encodeClaudeRequest(
@@ -665,9 +764,10 @@ private extension LLMModelRouter {
     ) throws -> Data {
         let prompt = translationPrompt(text: text, source: source, target: target)
         let system = configuration.systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Anthropic Messages enables extended thinking only when this object
+        // is present. Omitting it is the documented non-thinking request.
         let thinking: ClaudeThinking? = configuration.thinking == .thinking
-            ? ClaudeThinking(type: "enabled", budget_tokens: 1024)
-            : nil
+            ? ClaudeThinking(type: "enabled", budget_tokens: 1024) : nil
         return try JSONEncoder().encode(
             ClaudeRequest(
                 model: configuration.model,
@@ -697,6 +797,40 @@ private extension LLMModelRouter {
             throw LLMTranslationError.invalidResponse(model: "Claude", message: "Missing text content")
         }
         return text
+    }
+
+    static func decodeResponsesResponse(_ data: Data) throws -> String {
+        let response = try JSONDecoder().decode(ResponsesResponse.self, from: data)
+        let direct = response.output_text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !direct.isEmpty { return direct }
+        let outputMessages = (response.output ?? []).filter { $0.type == "message" || $0.type == nil }
+        let outputContent = outputMessages.flatMap { $0.content ?? [] }
+        let textParts = outputContent
+            .filter { $0.type == "output_text" || $0.type == "text" || $0.type == nil }
+            .compactMap(\.text)
+        let nested = textParts.joined().trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !nested.isEmpty else {
+            throw LLMTranslationError.invalidResponse(model: "OpenAI", message: "Missing output text")
+        }
+        return nested
+    }
+
+    private static func chatReasoningEffort(for configuration: LLMModelConfiguration) -> String? {
+        guard configuration.provider == .openAICompatible || configuration.provider == .custom else { return nil }
+        switch configuration.thinking {
+        case .automatic: return nil
+        case .nonThinking: return "none"
+        case .thinking: return "high"
+        }
+    }
+
+    private static func chatThinkingControl(for configuration: LLMModelConfiguration) -> ThinkingControl? {
+        guard configuration.provider == .deepSeek || configuration.provider == .glm else { return nil }
+        switch configuration.thinking {
+        case .automatic: return nil
+        case .nonThinking: return ThinkingControl(type: "disabled")
+        case .thinking: return ThinkingControl(type: "enabled")
+        }
     }
 
     static func errorMessage(from data: Data) -> String? {

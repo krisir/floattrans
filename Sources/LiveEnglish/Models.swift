@@ -390,6 +390,10 @@ final class TranslationSessionHolder {
     }
 
     func configure(source: Language, target: Language) {
+        // LLM backend/model edits do not change the local language pair.
+        // Keeping the existing TranslationSession alive is important because
+        // TranslationHostView only recreates a session when this pair changes.
+        guard requestedSource != source || requestedTarget != target else { return }
         requestedSource = source
         requestedTarget = target
         session = nil

@@ -16,7 +16,7 @@ final class InputCoordinatorTimingTests: XCTestCase {
         input.delayMilliseconds = 20
         let session = InputSessionID(pid: 1)
         var received: String?
-        input.onSentence = { text, _, _, _, _ in received = text }
+        input.onSentence = { text, _, _, _, _, _, _ in received = text }
         input.handle(snapshot("我今天会晚一点"), session: session, screen: nil)
         XCTAssertNil(received)
         try? await Task.sleep(for: .milliseconds(80))
@@ -29,7 +29,7 @@ final class InputCoordinatorTimingTests: XCTestCase {
         input.delayMilliseconds = 20
         let session = InputSessionID(pid: 1)
         var received: String?
-        input.onSentence = { text, _, _, _, _ in received = text }
+        input.onSentence = { text, _, _, _, _, _, _ in received = text }
         input.handle(snapshot("我今天会晚一点"), session: session, screen: nil)
         XCTAssertNil(received)
         try? await Task.sleep(for: .milliseconds(80))
@@ -42,7 +42,7 @@ final class InputCoordinatorTimingTests: XCTestCase {
         input.delayMilliseconds = 200
         let session = InputSessionID(pid: 1)
         var received: String?
-        input.onSentence = { text, _, _, _, _ in received = text }
+        input.onSentence = { text, _, _, _, _, _, _ in received = text }
         input.handle(snapshot("我今天会晚一点。"), session: session, screen: nil)
         XCTAssertEqual(received, "我今天会晚一点。")
     }
@@ -53,7 +53,7 @@ final class InputCoordinatorTimingTests: XCTestCase {
         input.delayMilliseconds = 20
         let session = InputSessionID(pid: 1)
         var received: String?
-        input.onSentence = { text, _, _, _, _ in received = text }
+        input.onSentence = { text, _, _, _, _, _, _ in received = text }
         input.handle(snapshot("我今天会晚一点。"), session: session, screen: nil)
         try? await Task.sleep(for: .milliseconds(80))
         XCTAssertNil(received)
@@ -72,10 +72,63 @@ final class InputCoordinatorTimingTests: XCTestCase {
         input.timing = .shortcut
         let session = InputSessionID(pid: 1)
         var received: String?
-        input.onSentence = { text, _, _, _, _ in received = text }
+        input.onSentence = { text, _, _, _, _, _, _ in received = text }
         input.translateNow(live, session: session, screen: nil)
         XCTAssertNil(received)
         input.translateNow(recovered, session: session, screen: nil)
         XCTAssertEqual(received, "我今天会晚一点。")
+    }
+
+    func testCorrectionAfterDeletionAndRetypingIsASeparateRevision() {
+        let input = InputCoordinator()
+        input.timing = .completeSentence
+        let session = InputSessionID(pid: 1)
+        var received: [String] = []
+        input.onSentence = { text, _, _, _, _, _, _ in received.append(text) }
+
+        input.handle(snapshot("我今天会晚一点。"), session: session, screen: nil)
+        input.handle(snapshot("我今天会晚一點。"), session: session, screen: nil)
+        input.handle(snapshot("我今天会晚一点。"), session: session, screen: nil)
+
+        XCTAssertEqual(received, ["我今天会晚一点。", "我今天会晚一點。", "我今天会晚一点。"])
+    }
+
+    func testElectronPlaceholderIsNotUserInput() {
+        XCTAssertTrue(
+            InputPlaceholderPolicy.isPlaceholder(
+                text: "输入消息，按 Enter 发送，输入 / 选择工具或操作，输入 @ 引用话题",
+                accessibilityPlaceholder: nil))
+        XCTAssertTrue(InputPlaceholderPolicy.isPlaceholder(text: "写消息", accessibilityPlaceholder: "写消息"))
+        XCTAssertFalse(InputPlaceholderPolicy.isPlaceholder(text: "这是用户输入", accessibilityPlaceholder: nil))
+    }
+
+    func testSettingTheExistingSourceLanguageDoesNotResetInput() {
+        let input = InputCoordinator()
+        var emptyNotifications = 0
+        input.onEmpty = { emptyNotifications += 1 }
+
+        input.setSourceLanguage(.chinese)
+
+        XCTAssertEqual(emptyNotifications, 0)
+        input.setSourceLanguage(.english)
+        XCTAssertEqual(emptyNotifications, 1)
+    }
+
+    func testEmptyInputCancelsThePendingPauseTranslation() async {
+        let input = InputCoordinator()
+        input.timing = .pause
+        input.delayMilliseconds = 20
+        let session = InputSessionID(pid: 1)
+        var received: String?
+        var emptyNotifications = 0
+        input.onSentence = { text, _, _, _, _, _, _ in received = text }
+        input.onEmpty = { emptyNotifications += 1 }
+
+        input.handle(snapshot("你"), session: session, screen: nil)
+        input.handle(snapshot(""), session: session, screen: nil)
+        try? await Task.sleep(for: .milliseconds(80))
+
+        XCTAssertEqual(emptyNotifications, 1)
+        XCTAssertNil(received)
     }
 }
