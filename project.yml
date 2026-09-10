@@ -6,11 +6,16 @@ options:
   createIntermediateGroups: true
   indentWidth: 4
   tabWidth: 4
+  # Xcode 26.5 -> LastUpgradeCheck 2650; keeps "Update to recommended settings" quiet.
+  xcodeVersion: "26.5"
 settings:
   base:
     SWIFT_VERSION: "6.0"
     SWIFT_STRICT_CONCURRENCY: minimal
     MACOSX_DEPLOYMENT_TARGET: "15.0"
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    DEAD_CODE_STRIPPING: YES
+    ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: YES
 configs:
   Debug: debug
   Release: release
