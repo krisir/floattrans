@@ -32,7 +32,8 @@ public struct InputSessionID: Hashable, Sendable {
 @MainActor final class InputCoordinator {
     private let logger = Logger(subsystem: "com.liveenglish.app", category: "pipeline")
     private let extractor = SentenceExtractor(), detector = LanguageTextDetector(), debouncer = InputDebouncer()
-    private var lastSentence = "", session: InputSessionID?
+    private var lastSentence = "", lastObservedText = "", session: InputSessionID?
+    private var inputRevision = 0, lastEmittedRevision = -1
     var isEnabled = true
     var sourceLanguage: Language = .chinese
     var excludedBundleIDs: Set<String> = []
@@ -49,8 +50,15 @@ public struct InputSessionID: Hashable, Sendable {
             if timing != .pause { debouncer.cancel() }
         }
     }
-    var onSentence: ((String, String, InputSessionID, NSScreen?, TextSnapshot) -> Void)?, onEmpty: (() -> Void)?
+    var onSentence: ((String, String, InputSessionID, NSScreen?, TextSnapshot, TranslationEvent, Int) -> Void)?
+    var onInputChanged: ((InputSessionID, Int) -> Void)?
+    var onEmpty: (() -> Void)?
     func setSourceLanguage(_ language: Language) {
+        // A backend/model edit also flows through AppState's translation
+        // settings application. Do not reset active input unless the source
+        // language actually changed: reset emits onEmpty, which can cancel a
+        // translation that the user starts immediately after switching engine.
+        guard sourceLanguage != language else { return }
         sourceLanguage = language
         reset()
     }
@@ -66,7 +74,17 @@ public struct InputSessionID: Hashable, Sendable {
             reset()
             return
         }
-        self.session = session
+        if self.session != session {
+            self.session = session
+            lastObservedText = ""
+            lastSentence = ""
+            lastEmittedRevision = -1
+        }
+        guard snapshot.text != lastObservedText else { return }
+        lastObservedText = snapshot.text
+        inputRevision += 1
+        let revision = inputRevision
+        onInputChanged?(session, revision)
         if snapshot.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             debouncer.cancel()
             lastSentence = ""
@@ -76,13 +94,13 @@ public struct InputSessionID: Hashable, Sendable {
         switch timing {
         case .pause:
             debouncer.submit(snapshot) { [weak self] snapshot in
-                guard let self, self.session == session else { return }
-                self.emit(snapshot, session: session, screen: screen)
+                guard let self, self.session == session, self.inputRevision == revision else { return }
+                self.emit(snapshot, session: session, screen: screen, event: .pause, revision: revision)
             }
         case .completeSentence:
             debouncer.cancel()
             if extractor.isComplete(snapshot) {
-                emit(snapshot, session: session, screen: screen)
+                emit(snapshot, session: session, screen: screen, event: .completeSentence, revision: revision)
             }
         case .shortcut:
             debouncer.cancel()
@@ -90,18 +108,30 @@ public struct InputSessionID: Hashable, Sendable {
     }
     func translateNow(_ snapshot: TextSnapshot, session: InputSessionID, screen: NSScreen?) {
         guard isEnabled else { return }
+        if self.session != session || snapshot.text != lastObservedText {
+            inputRevision += 1
+            lastObservedText = snapshot.text
+            onInputChanged?(session, inputRevision)
+        }
         self.session = session
-        emit(snapshot, session: session, screen: screen, force: true)
+        emit(snapshot, session: session, screen: screen, event: .shortcut, revision: inputRevision, force: true)
     }
     func reset() {
         debouncer.cancel()
         session = nil
         lastSentence = ""
+        lastObservedText = ""
+        lastEmittedRevision = -1
         onEmpty?()
     }
 
     private func emit(
-        _ snapshot: TextSnapshot, session: InputSessionID, screen: NSScreen?, force: Bool = false
+        _ snapshot: TextSnapshot,
+        session: InputSessionID,
+        screen: NSScreen?,
+        event: TranslationEvent,
+        revision: Int,
+        force: Bool = false
     ) {
         let sentence = extractor.extract(from: snapshot)
         DiagnosticLog.write(
@@ -110,14 +140,40 @@ public struct InputSessionID: Hashable, Sendable {
             "debounce fired sentenceLength=\(sentence.count, privacy: .public) source=\(self.sourceLanguage.rawValue, privacy: .public) matches=\(self.detector.contains(sentence, language: self.sourceLanguage), privacy: .public)"
         )
         guard !sentence.isEmpty, detector.contains(sentence, language: sourceLanguage) else { return }
-        if !force, sentence == lastSentence { return }
+        if !force, sentence == lastSentence, lastEmittedRevision == revision { return }
         lastSentence = sentence
+        lastEmittedRevision = revision
         let nsText = snapshot.text as NSString
         let sentenceRange = nsText.range(of: sentence, options: .backwards)
-        let sentenceKey =
-            sentenceRange.location == NSNotFound
-            ? "\(session.token.uuidString):\(sentence)" : nsText.substring(to: sentenceRange.location)
-        onSentence?(sentence, sentenceKey, session, screen, snapshot)
+        let sentenceKey: String
+        if sentenceRange.location == NSNotFound {
+            sentenceKey = "unresolved-\(revision)"
+        } else {
+            let prefix = nsText.substring(to: sentenceRange.location)
+            let ordinal = prefix.reduce(into: 0) { count, character in
+                if SentenceExtractor.terminators.contains(character) { count += 1 }
+            }
+            sentenceKey = "sentence-\(ordinal)"
+        }
+        onSentence?(sentence, sentenceKey, session, screen, snapshot, event, revision)
+    }
+}
+
+enum InputPlaceholderPolicy {
+    private static let knownElectronPlaceholders: Set<String> = [
+        "输入消息，按 Enter 发送，输入 / 选择工具或操作，输入 @ 引用话题",
+    ]
+
+    static func isPlaceholder(text: String, accessibilityPlaceholder: String?) -> Bool {
+        let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let accessibilityPlaceholder,
+            normalized == accessibilityPlaceholder.trimmingCharacters(in: .whitespacesAndNewlines)
+        {
+            return true
+        }
+        // Cherry Studio/Electron can expose its visual input hint as an
+        // AXValue instead of AXPlaceholderValue. It is not user content.
+        return knownElectronPlaceholders.contains(normalized)
     }
 }
 
@@ -130,6 +186,10 @@ public struct InputSessionID: Hashable, Sendable {
     private var appObserver: NSObjectProtocol?, elementObserver: AXObserver?, pollTimer: Timer?, focused: AXUIElement?,
         lastText: String?, lastGoodText: String?, lastSelectedRange: NSRange?, session = InputSessionID(pid: 0)
     private var focusedApp: AXUIElement?
+    private var keyboardMonitor: Any?
+    private var keyboardActivityPID: pid_t?
+    private var keyboardActivityUptime: TimeInterval = 0
+    private var pasteboardChangeCount = NSPasteboard.general.changeCount
     private(set) var isRunning = false
     func start() {
         guard AXIsProcessTrusted() else {
@@ -149,6 +209,13 @@ public struct InputSessionID: Hashable, Sendable {
             DispatchQueue.main.async { [weak self] in self?.focusApplication(NSWorkspace.shared.frontmostApplication) }
         }
         focusApplication(NSWorkspace.shared.frontmostApplication)
+        keyboardMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] _ in
+            let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier
+            Task { @MainActor [weak self] in
+                self?.keyboardActivityPID = pid
+                self?.keyboardActivityUptime = ProcessInfo.processInfo.systemUptime
+            }
+        }
         pollTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in self?.readSnapshot() }
         }
@@ -158,12 +225,17 @@ public struct InputSessionID: Hashable, Sendable {
         appObserver = nil
         pollTimer?.invalidate()
         pollTimer = nil
+        if let keyboardMonitor { NSEvent.removeMonitor(keyboardMonitor) }
+        keyboardMonitor = nil
         removeObserver()
         isRunning = false
     }
     private func focusApplication(_ app: NSRunningApplication?) {
         guard let app else { return }
         removeObserver()
+        keyboardActivityPID = nil
+        keyboardActivityUptime = 0
+        pasteboardChangeCount = NSPasteboard.general.changeCount
         let pid = app.processIdentifier
         session = InputSessionID(pid: pid)
         DiagnosticLog.write("focused app pid=\(pid) bundle=\(app.bundleIdentifier ?? "unknown")")
@@ -212,6 +284,7 @@ public struct InputSessionID: Hashable, Sendable {
                 lastSelectedRange = nil
             }
             focused = resolved
+            primeBaseline(for: resolved)
             logElementDetails(resolved, prefix: "resolved text element")
             observeValue(on: resolved)
         } else {
@@ -266,6 +339,24 @@ public struct InputSessionID: Hashable, Sendable {
         lastText = nil
         lastGoodText = nil
         lastSelectedRange = nil
+        keyboardActivityPID = nil
+        keyboardActivityUptime = 0
+    }
+
+    /// Focus changes and page switches are observations, not user edits. Read
+    /// the current field silently so its existing value cannot be translated
+    /// merely because the field became focused again.
+    private func primeBaseline(for element: AXUIElement) {
+        guard let live = readElementText(element) else {
+            lastText = nil
+            lastSelectedRange = nil
+            lastGoodText = nil
+            return
+        }
+        lastText = live.text
+        lastSelectedRange = live.selected
+        lastGoodText = live.isPlaceholder ? nil : live.text
+        pasteboardChangeCount = NSPasteboard.general.changeCount
     }
     func snapshotNow() -> (snapshot: TextSnapshot, session: InputSessionID, screen: NSScreen?)? {
         let captured = readFocusedText(force: true)
@@ -288,27 +379,74 @@ public struct InputSessionID: Hashable, Sendable {
         guard let live = readElementText(element) else { return nil }
         let text = live.text
         let selected = live.selected
-        let hasContent = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        if !hasContent {
-            guard force else { return nil }
-        } else {
-            if !force, text == lastText, selected == lastSelectedRange { return nil }
+        let hasContent = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !live.isPlaceholder
+        if force {
+            guard hasContent else { return nil }
             lastGoodText = text
             lastText = text
             lastSelectedRange = selected
+        } else {
+            // A caret move or selection change is not an input edit. Keep the
+            // baseline current but never send the unchanged value downstream.
+            guard text != lastText else {
+                lastSelectedRange = selected
+                return nil
+            }
+            // The first value observed after a focus change is only a new
+            // baseline. This also protects Electron placeholders exposed as
+            // AXValue until the user actually replaces them.
+            guard lastText != nil else {
+                lastText = text
+                lastSelectedRange = selected
+                lastGoodText = hasContent ? text : nil
+                return nil
+            }
+            let userInitiated = hasRecentKeyboardActivity(for: app.processIdentifier)
+                || NSPasteboard.general.changeCount != pasteboardChangeCount
+            lastText = text
+            lastSelectedRange = selected
+            pasteboardChangeCount = NSPasteboard.general.changeCount
+            guard userInitiated else {
+                // A web page may restore or replace a field while switching
+                // tabs. Treat that as a new baseline, not something the user
+                // asked FloatTrans to translate.
+                lastGoodText = hasContent ? text : nil
+                return nil
+            }
+            lastGoodText = hasContent ? text : nil
         }
-        DiagnosticLog.write("AXValue read success length=\(text.count)")
-        logger.info("AXValue read success length=\(text.count, privacy: .public)")
+        // An empty value is an edit too. Passing it to InputCoordinator lets
+        // it cancel the pending request and hide any prior overlay. Web views
+        // often expose an input hint as AXValue, so normalize that placeholder
+        // to an empty snapshot instead of treating it as source text.
+        let snapshotText = hasContent ? text : ""
+        DiagnosticLog.write("AXValue read success length=\(snapshotText.count)")
+        logger.info("AXValue read success length=\(snapshotText.count, privacy: .public)")
         let screen = NSScreen.main
         let snapshot = TextSnapshot(
-            pid: session.pid, bundleIdentifier: app.bundleIdentifier, text: text, selectedRange: selected)
+            pid: session.pid, bundleIdentifier: app.bundleIdentifier, text: snapshotText, selectedRange: selected)
         if !force {
             onSnapshot?(snapshot, session, screen)
         }
         return (snapshot, session, screen)
     }
 
-    private func readElementText(_ element: AXUIElement) -> (text: String, selected: NSRange?)? {
+    private func hasRecentKeyboardActivity(for pid: pid_t) -> Bool {
+        guard keyboardActivityPID == pid else { return false }
+        return ProcessInfo.processInfo.systemUptime - keyboardActivityUptime <= 1.5
+    }
+
+    private struct AccessibleTextValue {
+        let text: String
+        let selected: NSRange?
+        let placeholder: String?
+
+        var isPlaceholder: Bool {
+            InputPlaceholderPolicy.isPlaceholder(text: text, accessibilityPlaceholder: placeholder)
+        }
+    }
+
+    private func readElementText(_ element: AXUIElement) -> AccessibleTextValue? {
         var selected: NSRange?
         var range: CFTypeRef?
         _ = AXUIElementCopyAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, &range)
@@ -317,20 +455,30 @@ public struct InputSessionID: Hashable, Sendable {
             let ax = range as! AXValue
             if AXValueGetValue(ax, .cfRange, &r) { selected = NSRange(location: r.location, length: r.length) }
         }
+        let placeholder = stringAttribute("AXPlaceholderValue", on: element)
         var value: CFTypeRef?
         let valueStatus = AXUIElementCopyAttributeValue(element, kAXValueAttribute as CFString, &value)
         if valueStatus == .success, let text = value as? String,
             !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         {
-            return (text, selected)
+            return AccessibleTextValue(text: text, selected: selected, placeholder: placeholder)
         }
         if let ranged = stringForFullRange(element) {
-            return (ranged, selected)
+            return AccessibleTextValue(text: ranged, selected: selected, placeholder: placeholder)
         }
         if valueStatus == .success, let text = value as? String {
-            return (text, selected)
+            return AccessibleTextValue(text: text, selected: selected, placeholder: placeholder)
+        }
+        if let placeholder {
+            return AccessibleTextValue(text: "", selected: selected, placeholder: placeholder)
         }
         return nil
+    }
+
+    private func stringAttribute(_ name: String, on element: AXUIElement) -> String? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success else { return nil }
+        return value as? String
     }
 
     private func stringForFullRange(_ element: AXUIElement) -> String? {

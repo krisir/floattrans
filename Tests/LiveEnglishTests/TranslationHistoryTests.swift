@@ -100,6 +100,35 @@ final class TranslationHistoryTests: XCTestCase {
         // Cancel on the confirmation dialog never calls deleteAll; rows stay until this method runs.
     }
 
+    func testCorrectionUpdatesTheExistingSentenceHistoryRow() async throws {
+        let (store, cleanup) = try makeStore()
+        defer { cleanup() }
+        let calendar = Calendar(identifier: .gregorian)
+        let firstDate = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 9, day: 10, hour: 10)))
+        let correctedDate = try XCTUnwrap(calendar.date(byAdding: .minute, value: 1, to: firstDate))
+
+        _ = try await store.recordAndLoad(
+            sourceText: "我今天会晚一點。",
+            translatedText: "I will be a little late today.",
+            sourceLanguage: .chinese,
+            targetLanguage: .english,
+            retention: .forever,
+            historyKey: "session-1:sentence-0",
+            now: firstDate)
+        let entries = try await store.recordAndLoad(
+            sourceText: "我今天会晚一点。",
+            translatedText: "I will be a little late today.",
+            sourceLanguage: .chinese,
+            targetLanguage: .english,
+            retention: .forever,
+            historyKey: "session-1:sentence-0",
+            now: correctedDate)
+
+        XCTAssertEqual(entries.count, 1)
+        XCTAssertEqual(entries[0].sourceText, "我今天会晚一点。")
+        XCTAssertEqual(entries[0].createdAt, correctedDate)
+    }
+
     func testMarkdownExportGroupsByDateAndEscapesCells() {
         let entries = [
             TranslationHistoryEntry(

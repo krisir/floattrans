@@ -106,6 +106,14 @@ enum L10n {
     static func removeModel(_ lang: UILanguage) -> String { lang == .chinese ? "删除模型" : "Remove Model" }
     static func modelName(_ lang: UILanguage) -> String { lang == .chinese ? "名称" : "Name" }
     static func provider(_ lang: UILanguage) -> String { lang == .chinese ? "服务商" : "Provider" }
+    static func apiProtocol(_ lang: UILanguage) -> String { lang == .chinese ? "API 协议" : "API Protocol" }
+    static func apiProtocolName(_ value: LLMAPIProtocol, _ lang: UILanguage) -> String {
+        switch value {
+        case .chatCompletions: return "OpenAI Chat Completions"
+        case .responses: return "OpenAI Responses"
+        case .anthropicMessages: return "Anthropic Messages"
+        }
+    }
     static func providerName(_ provider: LLMProvider, _ lang: UILanguage) -> String {
         switch provider {
         case .openAICompatible: return lang == .chinese ? "OpenAI 兼容" : "OpenAI compatible"
@@ -153,6 +161,13 @@ enum L10n {
 
     static func translationSpeed(_ lang: UILanguage) -> String {
         lang == .chinese ? "翻译速度" : "Translation Speed"
+    }
+    static func pauseCommitDelay(_ lang: UILanguage) -> String {
+        lang == .chinese ? "停顿后翻译" : "Translate After Pause"
+    }
+    static func pauseCommitDelayValue(_ value: Double, _ lang: UILanguage) -> String {
+        let seconds = String(format: "%.1f", value)
+        return lang == .chinese ? "\(seconds) 秒" : "\(seconds) sec"
     }
     static func translationTiming(_ lang: UILanguage) -> String {
         lang == .chinese ? "翻译时机" : "Translation Timing"
@@ -294,7 +309,7 @@ enum L10n {
         lang == .chinese ? "朗读翻译结果" : "Read Translations Aloud"
     }
     static func speechTimingAll(_ lang: UILanguage) -> String {
-        lang == .chinese ? "完整句子和快捷键" : "Complete Sentence and Shortcut"
+        lang == .chinese ? "超时翻译、完整句子翻译和快捷键触发翻译" : "On Pause, Complete Sentence, and Shortcut"
     }
     static func speechTimingNone(_ lang: UILanguage) -> String {
         lang == .chinese ? "不朗读" : "Never"
@@ -316,6 +331,7 @@ enum L10n {
             let triggerSelection = SpeechTriggerSelection(rawValue: trigger.rawValue)
             guard normalized.contains(triggerSelection) else { return nil }
             switch trigger {
+            case .pause: return speechTimingPause(lang)
             case .completeSentence: return speechTimingCompleteSentence(lang)
             case .shortcut: return speechTimingShortcut(lang)
             }
@@ -327,6 +343,47 @@ enum L10n {
         return lang == .chinese
             ? "朗读会使用此 Mac 上\(languageName)的默认系统语音。"
             : "Speech uses this Mac’s default \(languageName) system voice."
+    }
+    static func speechVoices(_ lang: UILanguage) -> String {
+        lang == .chinese ? "按语言选择发音" : "Voices by Language"
+    }
+    static func speechVoicesHint(_ lang: UILanguage) -> String {
+        lang == .chinese
+            ? "选择语种后，选择这台 Mac 已安装的声音；留空使用系统默认。"
+            : "Choose a language, then an installed macOS voice. Leave it empty for the system default."
+    }
+    static func speechSystemDefault(_ lang: UILanguage) -> String {
+        lang == .chinese ? "系统默认" : "System Default"
+    }
+    static func speechTest(_ lang: UILanguage) -> String {
+        lang == .chinese ? "发音测试" : "Test Voice"
+    }
+    static func speechNoVoices(_ lang: UILanguage) -> String {
+        lang == .chinese ? "未检测到已安装的对应语音" : "No installed voice detected for this language"
+    }
+    static func speechTestText(_ language: Language, _ lang: UILanguage) -> String {
+        if lang == .chinese {
+            switch language {
+            case .chinese: return "这是中文发音测试。"
+            case .english: return "This is an English voice test."
+            case .japanese: return "これは日本語の音声テストです。"
+            case .russian: return "Это тест русского голоса."
+            case .korean: return "한국어 음성 테스트입니다."
+            case .french: return "Ceci est un test de voix française."
+            case .german: return "Dies ist ein Test der deutschen Stimme."
+            case .spanish: return "Esta es una prueba de voz en español."
+            }
+        }
+        switch language {
+        case .chinese: return "这是中文发音测试。"
+        case .english: return "This is an English voice test."
+        case .japanese: return "これは日本語の音声テストです。"
+        case .russian: return "Это тест русского голоса."
+        case .korean: return "한국어 음성 테스트입니다."
+        case .french: return "Ceci est un test de voix française."
+        case .german: return "Dies ist ein Test der deutschen Stimme."
+        case .spanish: return "Esta es una prueba de voz en español."
+        }
     }
 
     static func groupPosition(_ lang: UILanguage) -> String {

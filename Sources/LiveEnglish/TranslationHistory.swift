@@ -82,11 +82,23 @@ actor TranslationHistoryStore {
                 source_language TEXT NOT NULL,
                 target_language TEXT NOT NULL,
                 source_text TEXT NOT NULL,
-                translated_text TEXT NOT NULL
+                translated_text TEXT NOT NULL,
+                history_key TEXT
             );
             """, database: opened)
+        do {
+            try Self.execute("ALTER TABLE translation_history ADD COLUMN history_key TEXT;", database: opened)
+        } catch {
+            // Existing installations already have this column; SQLite does
+            // not provide IF NOT EXISTS for ALTER TABLE ADD COLUMN.
+            let message = String(describing: error).lowercased()
+            guard message.contains("duplicate column") else { throw error }
+        }
         try Self.execute(
             "CREATE INDEX IF NOT EXISTS translation_history_created_at ON translation_history(created_at DESC);",
+            database: opened)
+        try Self.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS translation_history_history_key ON translation_history(history_key) WHERE history_key IS NOT NULL AND history_key <> '';",
             database: opened)
     }
 
@@ -107,6 +119,7 @@ actor TranslationHistoryStore {
         sourceLanguage: Language,
         targetLanguage: Language,
         retention: HistoryRetention,
+        historyKey: String? = nil,
         now: Date = .now
     ) throws -> [TranslationHistoryEntry] {
         if retention == .none {
@@ -116,7 +129,18 @@ actor TranslationHistoryStore {
         let translation = translatedText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !source.isEmpty, !translation.isEmpty else { return try load(retention: retention, now: now) }
 
-        let statement = try prepare("""
+        let hasKey = !(historyKey?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+        let statement = try prepare(hasKey ? """
+            INSERT INTO translation_history
+                (created_at, source_language, target_language, source_text, translated_text, history_key)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(history_key) WHERE history_key IS NOT NULL AND history_key <> '' DO UPDATE SET
+                created_at = excluded.created_at,
+                source_language = excluded.source_language,
+                target_language = excluded.target_language,
+                source_text = excluded.source_text,
+                translated_text = excluded.translated_text;
+            """ : """
             INSERT INTO translation_history
                 (created_at, source_language, target_language, source_text, translated_text)
             VALUES (?, ?, ?, ?, ?);
@@ -127,6 +151,9 @@ actor TranslationHistoryStore {
         bind(targetLanguage.rawValue, to: statement, at: 3)
         bind(source, to: statement, at: 4)
         bind(translation, to: statement, at: 5)
+        if hasKey, let historyKey {
+            bind(historyKey, to: statement, at: 6)
+        }
         try stepDone(statement)
         return try load(retention: retention, now: now)
     }
@@ -247,7 +274,8 @@ final class TranslationHistoryController: ObservableObject {
         translatedText: String,
         sourceLanguage: Language,
         targetLanguage: Language,
-        retention: HistoryRetention
+        retention: HistoryRetention,
+        historyKey: String? = nil
     ) {
         guard let store else { return }
         Task {
@@ -257,7 +285,8 @@ final class TranslationHistoryController: ObservableObject {
                     translatedText: translatedText,
                     sourceLanguage: sourceLanguage,
                     targetLanguage: targetLanguage,
-                    retention: retention)
+                    retention: retention,
+                    historyKey: historyKey)
                 errorMessage = nil
             } catch {
                 errorMessage = error.localizedDescription

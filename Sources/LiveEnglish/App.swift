@@ -73,11 +73,14 @@ struct MenuBarMenu: View {
     private let speechPolicy = SpeechPolicyEvaluator()
     private let hotKey = GlobalHotKey.shared
     private var currentSession: InputSessionID?
+    private var currentInputRevision = 0
     private var pendingAction: PendingTranslationAction?
     private var welcomeWindow: NSWindow?
     private var settingsWindow: NSWindow?
     private let chromeObserver = ChromeWindowObserver()
     private var permissionPoll: Task<Void, Never>?
+    private var translationSettingsTask: Task<Void, Never>?
+    private var translationSettingsGeneration = 0
     private var translationHostWindow: TranslationHostWindowController?
     init() {
         let store = SettingsStore()
@@ -108,7 +111,7 @@ struct MenuBarMenu: View {
         DiagnosticLog.write("startup trusted=\(trustedValue) enabled=\(enabledValue)")
         logger.info("startup trusted=\(trustedValue, privacy: .public) enabled=\(enabledValue, privacy: .public)")
         input.isEnabled = enabled
-        input.delayMilliseconds = settings.translationSpeed
+        input.delayMilliseconds = Int(settings.pauseCommitDelay * 1000)
         input.sourceLanguage = settings.sourceLanguage
         input.timing = settings.translationTiming
         overlay.hideAfter = settings.hideAfter
@@ -129,10 +132,17 @@ struct MenuBarMenu: View {
             guard let self else { return }
             self.history.reload(retention: self.settings.historyRetention)
         }
-        input.onSentence = { [weak self] text, sentenceKey, session, screen, snapshot in
-            self?.translate(text, sentenceKey: sentenceKey, session: session, screen: screen, snapshot: snapshot)
+        input.onInputChanged = { [weak self] session, revision in
+            self?.invalidateTranslationForInputChange(session: session, revision: revision)
+        }
+        input.onSentence = { [weak self] text, sentenceKey, session, screen, snapshot, event, revision in
+            self?.translate(
+                text, sentenceKey: sentenceKey, session: session, screen: screen, snapshot: snapshot, event: event,
+                revision: revision)
         }
         input.onEmpty = { [weak self] in
+            self?.currentSession = nil
+            self?.currentInputRevision += 1
             self?.clearPendingAction()
             self?.overlay.hide()
             self?.speech.stop()
@@ -184,6 +194,11 @@ struct MenuBarMenu: View {
     /// Applies a settings edit to the running pipeline. Direction, engine,
     /// prompt/model order, and timeout all take effect on the next request;
     /// existing work is invalidated so stale output cannot overwrite it.
+    ///
+    /// TranslationSessionHolder and InputCoordinator deliberately make
+    /// same-direction updates no-ops. Switching between local and LLM
+    /// translation must not tear down the local TranslationSession or reset
+    /// keyboard input state.
     func applyTranslationSettings() {
         let source = settings.sourceLanguage
         let target = settings.targetLanguage
@@ -197,13 +212,20 @@ struct MenuBarMenu: View {
         clearPendingAction()
         overlay.hide()
         speech.stop()
+        translationSettingsGeneration += 1
+        let generation = translationSettingsGeneration
+        translationSettingsTask?.cancel()
         let coordinator = coordinator
         let service = translationService
-        Task {
+        translationSettingsTask = Task { [weak self] in
             await coordinator.cancel()
             await coordinator.setDirection(from: source, to: target)
             await service.configure(backend: backend, models: models, timeoutSeconds: timeout)
             await coordinator.clearCache()
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard let self, self.translationSettingsGeneration == generation else { return }
+            }
         }
     }
     func toggle() {
@@ -284,11 +306,18 @@ struct MenuBarMenu: View {
         AppPresence.reveal(window)
     }
     private func translate(
-        _ text: String, sentenceKey: String, session: InputSessionID, screen: NSScreen?, snapshot: TextSnapshot
+        _ text: String,
+        sentenceKey: String,
+        session: InputSessionID,
+        screen: NSScreen?,
+        snapshot: TextSnapshot,
+        event: TranslationEvent,
+        revision: Int
     ) {
         let sourceLanguage = settings.sourceLanguage
         let targetLanguage = settings.targetLanguage
         currentSession = session
+        currentInputRevision = revision
         let previous = pendingAction
         let sameSentence = previous?.sentenceKey == sentenceKey && previous?.session == session
         var sourceWithTerminator: String?
@@ -306,7 +335,12 @@ struct MenuBarMenu: View {
         DiagnosticLog.write("translation requested length=\(text.count)")
         logger.info("translation requested length=\(text.count, privacy: .public)")
         let coordinator = coordinator
+        let settingsTask = translationSettingsTask
+        let generation = translationSettingsGeneration
         Task { [weak self, coordinator] in
+            await settingsTask?.value
+            guard !Task.isCancelled else { return }
+            guard await MainActor.run(body: { self?.translationSettingsGeneration == generation }) else { return }
             guard let result = await coordinator.translate(text) else {
                 await MainActor.run {
                     DiagnosticLog.write("translation returned no result")
@@ -322,7 +356,9 @@ struct MenuBarMenu: View {
                     targetLanguage: targetLanguage,
                     key: sentenceKey,
                     session: session,
-                    screen: screen)
+                    screen: screen,
+                    event: event,
+                    revision: revision)
             }
         }
     }
@@ -333,9 +369,11 @@ struct MenuBarMenu: View {
         targetLanguage: Language,
         key sentenceKey: String,
         session: InputSessionID,
-        screen: NSScreen?
+        screen: NSScreen?,
+        event: TranslationEvent,
+        revision: Int
     ) {
-        guard currentSession == session, enabled else {
+        guard currentSession == session, currentInputRevision == revision, enabled else {
             DiagnosticLog.write("translation discarded stale session")
             logger.info("translation discarded stale session")
             return
@@ -352,25 +390,44 @@ struct MenuBarMenu: View {
             translatedText: result,
             sourceLanguage: sourceLanguage,
             targetLanguage: targetLanguage,
-            retention: settings.historyRetention)
+            retention: settings.historyRetention,
+            historyKey: historyKey(for: sentenceKey, session: session))
         DiagnosticLog.write("translation result accepted length=\(result.count)")
         logger.info("translation result accepted length=\(result.count, privacy: .public)")
         overlay.show(result, key: sentenceKey, on: screen)
-        speakIfAllowed(result)
+        speakIfAllowed(result, event: event, targetLanguage: targetLanguage)
         if pendingAction?.applyReplaceWhenReady == true { applyPendingReplace() }
         if pendingAction?.applyCopyWhenReady == true { applyPendingCopy() }
     }
-    private func speakIfAllowed(_ text: String) {
+    private func speakIfAllowed(_ text: String, event: TranslationEvent, targetLanguage: Language) {
         guard speechPolicy.shouldSpeak(
             speechEnabled: settings.speechEnabled,
             speechTriggers: settings.speechTriggers,
-            translationTiming: settings.translationTiming)
+            event: event)
         else {
             DiagnosticLog.write("speech skipped")
             return
         }
         DiagnosticLog.write("speech speaking length=\(text.count)")
-        speech.speak(text, language: settings.targetLanguage)
+        speech.speak(
+            text,
+            language: targetLanguage,
+            voiceIdentifier: settings.configuredSpeechVoice(for: targetLanguage))
+    }
+
+    private func historyKey(for sentenceKey: String, session: InputSessionID) -> String {
+        "\(session.token.uuidString):\(sentenceKey)"
+    }
+
+    /// Each physical edit invalidates results already in flight. This matters
+    /// for corrections: the old translation must never overwrite or speak
+    /// after the user deleted and retyped part of the same sentence.
+    private func invalidateTranslationForInputChange(session: InputSessionID, revision: Int) {
+        currentSession = session
+        currentInputRevision = revision
+        clearPendingAction()
+        overlay.hide()
+        speech.stop()
     }
     func setReplaceOriginal(_ enabled: Bool) {
         settings.replaceOriginal = enabled
