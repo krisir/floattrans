@@ -9,7 +9,7 @@ final class SettingsStoreTests: XCTestCase {
         "overlayBehavior", "uiLanguage", "translationSpeed", "speechEnabled", "speechTriggers", "speechVoiceIdentifier", "speechRate",
         "speechVolume", "autoSpeakPolicy", "excludedBundleIDs", "replaceOriginal", "copyTranslation",
         "replaceShortcutKeyCode", "replaceShortcutModifiers", "copyShortcutKeyCode", "copyShortcutModifiers",
-        "translationTiming", "translateShortcutKeyCode", "translateShortcutModifiers",
+        "translationTiming", "translateShortcutKeyCode", "translateShortcutModifiers", "pauseCommitDelay",
         "sourceLanguage", "targetLanguage", "translationBackend", "llmModels", "llmFallbackTimeout", "historyRetention",
     ]
 
@@ -354,6 +354,33 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(store.copyShortcut, .optionShiftRightBracket)
         XCTAssertEqual(store.translationTiming, .pause)
         XCTAssertEqual(store.translateShortcut, .controlShiftT)
+    }
+
+    func testPauseCommitDelaySurvivesTimingModeChanges() {
+        let defaults = UserDefaults.standard
+        let saved = snapshot(defaults)
+        defer { restore(defaults, saved) }
+
+        for key in keys { defaults.removeObject(forKey: key) }
+        defaults.set(false, forKey: "launchAtLogin")
+
+        let store = SettingsStore()
+        store.pauseCommitDelay = 1.6
+        XCTAssertEqual(store.pauseCommitDelay, 1.6)
+        XCTAssertEqual(defaults.double(forKey: "pauseCommitDelay"), 1.6)
+
+        store.translationTiming = .completeSentence
+        XCTAssertEqual(store.pauseCommitDelay, 1.6)
+        XCTAssertEqual(defaults.double(forKey: "pauseCommitDelay"), 1.6)
+
+        store.translationTiming = .shortcut
+        XCTAssertEqual(store.pauseCommitDelay, 1.6)
+        XCTAssertEqual(defaults.double(forKey: "pauseCommitDelay"), 1.6)
+
+        store.translationTiming = .pause
+        XCTAssertEqual(store.pauseCommitDelay, 1.6)
+        XCTAssertEqual(defaults.double(forKey: "pauseCommitDelay"), 1.6)
+        XCTAssertEqual(SettingsStore().pauseCommitDelay, 1.6)
     }
 
     func testLocalBackendDoesNotReadKeychainUntilLanguageModelIsSelected() throws {

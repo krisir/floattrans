@@ -300,23 +300,6 @@ struct SettingsView: View {
                 .labelsHidden()
                 .frame(maxWidth: 220)
             }
-            SettingsRow(label: L10n.pauseCommitDelay(lang)) {
-                HStack(spacing: 8) {
-                    Slider(
-                        value: Binding(
-                            get: { settings.pauseCommitDelay },
-                            set: {
-                                settings.pauseCommitDelay = $0
-                                state.input.delayMilliseconds = Int($0 * 1_000)
-                            }),
-                        in: 0.5...2.0,
-                        step: 0.1)
-                    Text(L10n.pauseCommitDelayValue(settings.pauseCommitDelay, lang))
-                        .monospacedDigit()
-                        .frame(width: 54, alignment: .trailing)
-                }
-                .frame(maxWidth: 280)
-            }
             SettingsRow(label: L10n.translationTiming(lang)) {
                 Picker(
                     "",
@@ -330,6 +313,25 @@ struct SettingsView: View {
                 }
                 .labelsHidden()
                 .frame(maxWidth: 260)
+            }
+            if settings.translationTiming == .pause {
+                SettingsRow(label: L10n.pauseCommitDelay(lang)) {
+                    HStack(spacing: 8) {
+                        Slider(
+                            value: Binding(
+                                get: { settings.pauseCommitDelay },
+                                set: {
+                                    settings.pauseCommitDelay = $0
+                                    state.input.delayMilliseconds = Int($0 * 1_000)
+                                }),
+                            in: 0.5...2.0,
+                            step: 0.1)
+                        Text(L10n.pauseCommitDelayValue(settings.pauseCommitDelay, lang))
+                            .monospacedDigit()
+                            .frame(width: 54, alignment: .trailing)
+                    }
+                    .frame(maxWidth: 280)
+                }
             }
             if settings.translationTiming == .shortcut {
                 SettingsRow(label: L10n.translateShortcut(lang)) {
