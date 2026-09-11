@@ -409,10 +409,7 @@ struct MenuBarMenu: View {
             return
         }
         DiagnosticLog.write("speech speaking length=\(text.count)")
-        speech.speak(
-            text,
-            language: targetLanguage,
-            voiceIdentifier: settings.configuredSpeechVoice(for: targetLanguage))
+        speech.speak(text, language: targetLanguage)
     }
 
     private func historyKey(for sentenceKey: String, session: InputSessionID) -> String {

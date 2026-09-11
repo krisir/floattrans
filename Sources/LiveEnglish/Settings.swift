@@ -106,10 +106,10 @@ enum TranslationEvent: String, Sendable {
     }
 }
 
-/// The translation events that may trigger text-to-speech. Unlike the
-/// translation timing itself, users may select more than one event.
+/// The translation events that may trigger text-to-speech. Pause-triggered
+/// translation is intentionally excluded because speaking while the user is
+/// still composing is disruptive.
 enum SpeechTrigger: Int, CaseIterable, Identifiable, Sendable {
-    case pause = 1
     case completeSentence = 2
     case shortcut = 4
 
@@ -117,7 +117,6 @@ enum SpeechTrigger: Int, CaseIterable, Identifiable, Sendable {
 
     var translationTiming: TranslationTiming {
         switch self {
-        case .pause: return .pause
         case .completeSentence: return .completeSentence
         case .shortcut: return .shortcut
         }
@@ -130,7 +129,7 @@ struct SpeechTriggerSelection: OptionSet, Codable, Equatable, Sendable {
     static let pause = SpeechTriggerSelection(rawValue: 1)
     static let completeSentence = SpeechTriggerSelection(rawValue: SpeechTrigger.completeSentence.rawValue)
     static let shortcut = SpeechTriggerSelection(rawValue: SpeechTrigger.shortcut.rawValue)
-    static let all: SpeechTriggerSelection = [.pause, .completeSentence, .shortcut]
+    static let all: SpeechTriggerSelection = [.completeSentence, .shortcut]
 
     init(rawValue: Int) { self.rawValue = rawValue }
 
@@ -336,11 +335,6 @@ struct ReplaceShortcut: Equatable, Sendable {
             if speechEnabled != enabled { speechEnabled = enabled }
         }
     }
-    /// Explicit voice identifiers selected per translated language. An empty
-    /// value means the macOS voice for that language should be used.
-    @Published var speechVoiceIdentifiers: [String: String] {
-        didSet { persistSpeechVoiceMap(speechVoiceIdentifiers, key: "speechVoiceIdentifiers") }
-    }
     @Published var replaceOriginal: Bool { didSet { defaults.set(replaceOriginal, forKey: "replaceOriginal") } }
     @Published var copyTranslation: Bool { didSet { defaults.set(copyTranslation, forKey: "copyTranslation") } }
     @Published var replaceShortcut: ReplaceShortcut {
@@ -417,7 +411,6 @@ struct ReplaceShortcut: Equatable, Sendable {
         }
         speechTriggers = initialSpeechTriggers
         speechEnabled = !initialSpeechTriggers.isEmpty
-        speechVoiceIdentifiers = Self.readSpeechVoiceMap(defaults.dictionary(forKey: "speechVoiceIdentifiers"))
         replaceOriginal = defaults.object(forKey: "replaceOriginal") as? Bool ?? false
         copyTranslation = defaults.object(forKey: "copyTranslation") as? Bool ?? false
         replaceShortcut = Self.loadShortcut(
@@ -460,30 +453,6 @@ struct ReplaceShortcut: Equatable, Sendable {
         if defaults.object(forKey: "speechEnabled") == nil {
             defaults.set(speechEnabled, forKey: "speechEnabled")
         }
-        if defaults.object(forKey: "speechVoiceIdentifiers") == nil {
-            defaults.set(speechVoiceIdentifiers, forKey: "speechVoiceIdentifiers")
-        }
-        migrateLegacyCustomSpeechVoices()
-    }
-
-    func speechVoiceIdentifier(for language: Language) -> String {
-        speechVoiceIdentifiers[language.rawValue] ?? ""
-    }
-
-    func setSpeechVoiceIdentifier(_ identifier: String, for language: Language) {
-        var updated = speechVoiceIdentifiers
-        let value = identifier.trimmingCharacters(in: .whitespacesAndNewlines)
-        if value.isEmpty {
-            updated.removeValue(forKey: language.rawValue)
-        } else {
-            updated[language.rawValue] = value
-        }
-        speechVoiceIdentifiers = updated
-    }
-
-    func configuredSpeechVoice(for language: Language) -> String? {
-        let selected = speechVoiceIdentifier(for: language).trimmingCharacters(in: .whitespacesAndNewlines)
-        return selected.isEmpty ? nil : selected
     }
 
     func updateLLMModel(_ model: LLMModelConfiguration) {
@@ -528,36 +497,6 @@ struct ReplaceShortcut: Equatable, Sendable {
     private static func readLanguage(_ rawValue: String?, fallback: Language) -> Language {
         guard let rawValue, let value = Language(rawValue: rawValue) else { return fallback }
         return value
-    }
-
-    private static func readSpeechVoiceMap(_ value: [String: Any]?) -> [String: String] {
-        guard let value else { return [:] }
-        return value.reduce(into: [String: String]()) { result, item in
-            guard Language(rawValue: item.key) != nil, let voice = item.value as? String else { return }
-            let trimmed = voice.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmed.isEmpty { result[item.key] = trimmed }
-        }
-    }
-
-    private func persistSpeechVoiceMap(_ value: [String: String], key: String) {
-        defaults.set(value, forKey: key)
-    }
-
-    /// Earlier preview builds allowed a free-form voice name. Resolve those
-    /// values once to a catalog identifier so the compact picker remains the
-    /// sole source of truth without unexpectedly changing existing voices.
-    private func migrateLegacyCustomSpeechVoices() {
-        let legacy = Self.readSpeechVoiceMap(defaults.dictionary(forKey: "speechCustomVoiceNames"))
-        guard !legacy.isEmpty else { return }
-        var updated = speechVoiceIdentifiers
-        for language in Language.allCases where updated[language.rawValue] == nil {
-            guard let legacyName = legacy[language.rawValue] else { continue }
-            if let identifier = SpeechVoiceCatalog.voice(matching: legacyName, for: language)?.identifier {
-                updated[language.rawValue] = identifier
-            }
-        }
-        speechVoiceIdentifiers = updated
-        defaults.removeObject(forKey: "speechCustomVoiceNames")
     }
 
     private static func readLLMModels(_ data: Data?) -> [LLMModelConfiguration] {
