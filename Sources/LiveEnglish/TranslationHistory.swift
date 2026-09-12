@@ -247,6 +247,8 @@ final class TranslationHistoryController: ObservableObject {
     @Published private(set) var errorMessage: String?
 
     private let store: TranslationHistoryStore?
+    private var mutationGeneration = 0
+    private var operationTail: Task<Void, Never> = Task {}
 
     init(databaseURL: URL? = nil) {
         do {
@@ -259,12 +261,17 @@ final class TranslationHistoryController: ObservableObject {
 
     func reload(retention: HistoryRetention) {
         guard let store else { return }
-        Task {
+        let generation = mutationGeneration
+        enqueue { [weak self] in
+            guard let self, self.mutationGeneration == generation else { return }
             do {
-                entries = try await store.load(retention: retention)
-                errorMessage = nil
+                let loaded = try await store.load(retention: retention)
+                guard self.mutationGeneration == generation else { return }
+                self.entries = loaded
+                self.errorMessage = nil
             } catch {
-                errorMessage = error.localizedDescription
+                guard self.mutationGeneration == generation else { return }
+                self.errorMessage = error.localizedDescription
             }
         }
     }
@@ -278,32 +285,53 @@ final class TranslationHistoryController: ObservableObject {
         historyKey: String? = nil
     ) {
         guard let store else { return }
-        Task {
+        let generation = mutationGeneration
+        enqueue { [weak self] in
+            guard let self, self.mutationGeneration == generation else { return }
             do {
-                entries = try await store.recordAndLoad(
+                let loaded = try await store.recordAndLoad(
                     sourceText: sourceText,
                     translatedText: translatedText,
                     sourceLanguage: sourceLanguage,
                     targetLanguage: targetLanguage,
                     retention: retention,
                     historyKey: historyKey)
-                errorMessage = nil
+                guard self.mutationGeneration == generation else { return }
+                self.entries = loaded
+                self.errorMessage = nil
             } catch {
-                errorMessage = error.localizedDescription
+                guard self.mutationGeneration == generation else { return }
+                self.errorMessage = error.localizedDescription
             }
         }
     }
 
     func deleteAll() {
         guard let store else { return }
-        Task {
+        mutationGeneration += 1
+        let generation = mutationGeneration
+        enqueue { [weak self] in
+            guard let self, self.mutationGeneration == generation else { return }
             do {
                 try await store.deleteAll()
-                entries = []
-                errorMessage = nil
+                guard self.mutationGeneration == generation else { return }
+                self.entries = []
+                self.errorMessage = nil
             } catch {
-                errorMessage = error.localizedDescription
+                guard self.mutationGeneration == generation else { return }
+                self.errorMessage = error.localizedDescription
             }
+        }
+    }
+
+    func waitForPendingOperations() async {
+        await operationTail.value
+    }
+
+    private func enqueue(_ work: @escaping @MainActor () async -> Void) {
+        operationTail = Task { [operationTail] in
+            await operationTail.value
+            await work()
         }
     }
 }

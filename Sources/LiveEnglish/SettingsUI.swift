@@ -897,9 +897,28 @@ private struct ModelOrderDropDelegate: DropDelegate {
     }
 }
 
+/// Holds an in-progress LLM model edit until an explicit commit (save or blur).
+struct LLMModelDraftCommit: Equatable {
+    var lastCommitted: LLMModelConfiguration
+    var draft: LLMModelConfiguration
+
+    mutating func noteDraft(_ next: LLMModelConfiguration) {
+        draft = next
+    }
+
+    @discardableResult
+    mutating func commit(save: (LLMModelConfiguration) -> Void) -> Bool {
+        guard draft != lastCommitted else { return false }
+        save(draft)
+        lastCommitted = draft
+        return true
+    }
+}
+
 /// Editable row for one provider in the user-defined fail-over order.
 struct LLMModelEditor: View {
     @State private var draft: LLMModelConfiguration
+    @State private var lastCommitted: LLMModelConfiguration
     @State private var isExpanded = false
     let language: UILanguage
     let save: (LLMModelConfiguration) -> Void
@@ -919,6 +938,7 @@ struct LLMModelEditor: View {
             initialDraft.systemPrompt = LLMTranslationPrompt.defaultSystemPrompt
         }
         _draft = State(initialValue: initialDraft)
+        _lastCommitted = State(initialValue: initialDraft)
         self.language = language
         self.save = save
         self.remove = remove
@@ -1022,13 +1042,24 @@ struct LLMModelEditor: View {
                 HStack {
                     Toggle(L10n.modelEnabled(language), isOn: $draft.enabled).toggleStyle(.checkbox)
                     Spacer()
+                    Button(L10n.saveModel(language), action: commit)
                     Button(L10n.removeModel(language), role: .destructive, action: remove)
                 }
                 }
                 .padding(.top, 2)
             }
         }
-        .onChange(of: draft) { _, updated in save(updated) }
+        .onChange(of: isExpanded) { wasExpanded, expanded in
+            if wasExpanded, !expanded { commit() }
+        }
+        .onDisappear(perform: commit)
+    }
+
+    private func commit() {
+        var session = LLMModelDraftCommit(lastCommitted: lastCommitted, draft: draft)
+        if session.commit(save: save) {
+            lastCommitted = session.lastCommitted
+        }
     }
 
     private func thinkingName(_ mode: LLMThinkingMode) -> String {

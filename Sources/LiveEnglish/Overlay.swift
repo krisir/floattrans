@@ -50,6 +50,7 @@ struct TranslationOverlayView: View {
                     self?.remove(existing.id)
                 })
             relayout(on: screen)
+            armHideTimer(existing)
             return
         }
         if behavior == .replace { hide() }
@@ -72,13 +73,19 @@ struct TranslationOverlayView: View {
         entries.append(entry)
         relayout(on: target)
         panel.orderFrontRegardless()
-        if !neverHide {
-            let seconds = hideAfter
-            entry.hideTask = Task {
-                try? await Task.sleep(for: .seconds(seconds))
-                guard !Task.isCancelled else { return }
-                self.remove(id)
-            }
+        armHideTimer(entry)
+    }
+    var visibleCount: Int { entries.count }
+    private func armHideTimer(_ entry: Entry) {
+        entry.hideTask?.cancel()
+        entry.hideTask = nil
+        guard !neverHide else { return }
+        let seconds = hideAfter
+        let id = entry.id
+        entry.hideTask = Task {
+            try? await Task.sleep(for: .seconds(seconds))
+            guard !Task.isCancelled else { return }
+            self.remove(id)
         }
     }
     func hide() {
@@ -120,5 +127,47 @@ struct TranslationOverlayView: View {
                 x: frame.midX - size.width / 2, y: frame.minY + distance + offset, width: size.width,
                 height: size.height)
         }
+    }
+}
+
+enum OverlayScreenGeometry {
+    static func cocoaRect(axPosition: CGPoint, axSize: CGSize, desktopMaxY: CGFloat) -> CGRect {
+        CGRect(
+            x: axPosition.x, y: desktopMaxY - axPosition.y - axSize.height, width: axSize.width, height: axSize.height)
+    }
+
+    static func screenIndex(windowFrame: CGRect?, mouseLocation: CGPoint, screens: [CGRect]) -> Int? {
+        if let windowFrame {
+            var bestIndex: Int?
+            var bestArea: CGFloat = 0
+            for (index, frame) in screens.enumerated() {
+                let intersection = frame.intersection(windowFrame)
+                guard !intersection.isNull, !intersection.isInfinite else { continue }
+                let area = intersection.width * intersection.height
+                if area > bestArea {
+                    bestArea = area
+                    bestIndex = index
+                }
+            }
+            if let bestIndex, bestArea > 0 { return bestIndex }
+        }
+        if let index = screens.firstIndex(where: { $0.contains(mouseLocation) }) {
+            return index
+        }
+        return nil
+    }
+}
+
+enum OverlayScreenResolver {
+    static func resolve(
+        windowFrame: CGRect?, mouseLocation: NSPoint, screens: [NSScreen] = NSScreen.screens
+    ) -> NSScreen? {
+        let frames = screens.map(\.frame)
+        if let index = OverlayScreenGeometry.screenIndex(
+            windowFrame: windowFrame, mouseLocation: mouseLocation, screens: frames)
+        {
+            return screens[index]
+        }
+        return NSScreen.main ?? screens.first
     }
 }

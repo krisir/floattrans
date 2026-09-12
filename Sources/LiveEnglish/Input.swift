@@ -50,7 +50,7 @@ public struct InputSessionID: Hashable, Sendable {
             if timing != .pause { debouncer.cancel() }
         }
     }
-    var onSentence: ((String, String, InputSessionID, NSScreen?, TextSnapshot, TranslationEvent, Int) -> Void)?
+    var onSentence: ((ExtractedSource, String, InputSessionID, NSScreen?, TextSnapshot, TranslationEvent, Int) -> Void)?
     var onInputChanged: ((InputSessionID, Int) -> Void)?
     var onEmpty: (() -> Void)?
     func setSourceLanguage(_ language: Language) {
@@ -133,7 +133,8 @@ public struct InputSessionID: Hashable, Sendable {
         revision: Int,
         force: Bool = false
     ) {
-        let sentence = extractor.extract(from: snapshot)
+        guard let source = extractor.extractSource(from: snapshot) else { return }
+        let sentence = source.text
         DiagnosticLog.write(
             "debounce fired sentenceLength=\(sentence.count) source=\(sourceLanguage.rawValue) matches=\(detector.contains(sentence, language: sourceLanguage))")
         logger.info(
@@ -144,7 +145,7 @@ public struct InputSessionID: Hashable, Sendable {
         lastSentence = sentence
         lastEmittedRevision = revision
         let nsText = snapshot.text as NSString
-        let sentenceRange = nsText.range(of: sentence, options: .backwards)
+        let sentenceRange = source.range
         let sentenceKey: String
         if sentenceRange.location == NSNotFound {
             sentenceKey = "unresolved-\(revision)"
@@ -155,7 +156,7 @@ public struct InputSessionID: Hashable, Sendable {
             }
             sentenceKey = "sentence-\(ordinal)"
         }
-        onSentence?(sentence, sentenceKey, session, screen, snapshot, event, revision)
+        onSentence?(source, sentenceKey, session, screen, snapshot, event, revision)
     }
 }
 
@@ -365,7 +366,8 @@ enum InputPlaceholderPolicy {
         let resolved = ShortcutSnapshotRecovery.resolve(
             live: live, lastGoodText: lastGoodText, sourceLanguage: sourceLanguage)
         guard !resolved.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
-        return (resolved, captured?.session ?? session, captured?.screen ?? NSScreen.main)
+        return (resolved, captured?.session ?? session, captured?.screen ?? OverlayScreenResolver.resolve(
+            windowFrame: nil, mouseLocation: NSEvent.mouseLocation))
     }
     private func readSnapshot() {
         _ = readFocusedText(force: false)
@@ -422,7 +424,8 @@ enum InputPlaceholderPolicy {
         let snapshotText = hasContent ? text : ""
         DiagnosticLog.write("AXValue read success length=\(snapshotText.count)")
         logger.info("AXValue read success length=\(snapshotText.count, privacy: .public)")
-        let screen = NSScreen.main
+        let screen = OverlayScreenResolver.resolve(
+            windowFrame: focusedWindowFrame(of: element), mouseLocation: NSEvent.mouseLocation)
         let snapshot = TextSnapshot(
             pid: session.pid, bundleIdentifier: app.bundleIdentifier, text: snapshotText, selectedRange: selected)
         if !force {
@@ -503,13 +506,13 @@ enum InputPlaceholderPolicy {
         return text
     }
 
-    func replace(sourceWithTerminator: String, translation: String) -> Bool {
+    func replace(capturedSource: ExtractedSource, translation: String) -> Bool {
         guard let element = focused else { return false }
         var value: CFTypeRef?
         let read = AXUIElementCopyAttributeValue(element, kAXValueAttribute as CFString, &value)
         let current = read == .success ? value as? String : nil
         return FocusedFieldReplacer.replace(
-            currentText: current, sourceWithTerminator: sourceWithTerminator, translation: translation
+            currentText: current, capturedSource: capturedSource, translation: translation
         ) { text, caret in
             let write = AXUIElementSetAttributeValue(element, kAXValueAttribute as CFString, text as CFTypeRef)
             guard write == .success else { return false }
@@ -523,6 +526,35 @@ enum InputPlaceholderPolicy {
             return true
         }
     }
+
+    private func focusedWindowFrame(of element: AXUIElement) -> CGRect? {
+        var target = element
+        var windowRef: CFTypeRef?
+        if AXUIElementCopyAttributeValue(element, kAXWindowAttribute as CFString, &windowRef) == .success,
+            let windowRef,
+            CFGetTypeID(windowRef) == AXUIElementGetTypeID()
+        {
+            target = unsafeDowncast(windowRef, to: AXUIElement.self)
+        }
+        var positionRef: CFTypeRef?
+        var sizeRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(target, kAXPositionAttribute as CFString, &positionRef) == .success,
+            AXUIElementCopyAttributeValue(target, kAXSizeAttribute as CFString, &sizeRef) == .success,
+            let positionRef,
+            let sizeRef,
+            CFGetTypeID(positionRef) == AXValueGetTypeID(),
+            CFGetTypeID(sizeRef) == AXValueGetTypeID()
+        else { return nil }
+        let positionValue = unsafeDowncast(positionRef, to: AXValue.self)
+        let sizeValue = unsafeDowncast(sizeRef, to: AXValue.self)
+        var position = CGPoint.zero
+        var size = CGSize.zero
+        guard AXValueGetValue(positionValue, .cgPoint, &position), AXValueGetValue(sizeValue, .cgSize, &size)
+        else { return nil }
+        let desktopMaxY = NSScreen.screens.map(\.frame.maxY).max() ?? 0
+        return OverlayScreenGeometry.cocoaRect(axPosition: position, axSize: size, desktopMaxY: desktopMaxY)
+    }
+
     private func logElementDetails(_ element: AXUIElement, prefix: String = "AX element") {
         var names: CFArray?
         let result = AXUIElementCopyAttributeNames(element, &names)

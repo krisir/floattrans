@@ -112,19 +112,27 @@ When the current fragment ends with sentence punctuation (`。` `？` `！` `.` 
 
 ### Requirement: Replacement of the focused field happens only on the replace shortcut
 
-When Replace Original is on, a successful translation MUST NOT modify the focused input field by itself. The system SHALL replace the current source fragment in the focused field with the English translation only after the user presses the configured replace shortcut. The current source fragment is the Chinese text that produced the overlay translation, including trailing sentence punctuation when that punctuation was part of the translated source. Any text before that fragment SHALL be left unchanged. The shortcut MUST work while another application is focused and MUST NOT steal focus from the input field. When Replace Original is off, pressing the replace shortcut MUST NOT change the field.
+When Replace Original is on, a successful translation MUST NOT modify the focused input field by itself. The system SHALL replace the current source fragment in the focused field with the English translation only after the user presses the configured replace shortcut. The current source fragment is the exact UTF-16 range captured at the active caret when that translation was requested, including trailing sentence punctuation when that punctuation was part of the translated source. The system MUST pass that range from extraction through to the replace action. The system MUST NOT locate a replacement target by searching another occurrence of the source text, including a backwards string search. Any text outside that captured range SHALL be left unchanged. When the captured source was truncated to satisfy a request length limit, Replace Original MUST be unavailable for that translation; overlay display and Copy Translation remain available. The shortcut MUST work while another application is focused and MUST NOT steal focus from the input field. When Replace Original is off, pressing the replace shortcut MUST NOT change the field.
 
 #### Scenario: Translation does not rewrite the field automatically
 - **WHEN** Replace Original is on and a Chinese fragment is translated
 - **THEN** the focused input field still contains the original Chinese and the overlay shows the English result
 
 #### Scenario: Replace shortcut replaces an in-progress fragment
-- **WHEN** Replace Original is on, the overlay shows a translation of Chinese that does not yet end with a terminator, the field still contains that fragment, and the user presses the replace shortcut
+- **WHEN** Replace Original is on, the overlay shows a translation of Chinese that does not yet end with a terminator, the field still contains that fragment at the captured range, and the user presses the replace shortcut
 - **THEN** that fragment is replaced with the English translation and earlier text in the field is preserved
 
 #### Scenario: Replace shortcut replaces a completed sentence
-- **WHEN** Replace Original is on, a completed sentence including its punctuation has been translated, the field still contains that source sentence, and the user presses the replace shortcut
+- **WHEN** Replace Original is on, a completed sentence including its punctuation has been translated, the field still contains that source sentence at the captured range, and the user presses the replace shortcut
 - **THEN** that source sentence including its punctuation is replaced with the English translation (which includes the corresponding English punctuation) and earlier text in the field is preserved
+
+#### Scenario: Repeated sentence replaces the caret occurrence
+- **WHEN** a field contains the same Chinese fragment more than once, the caret is in an earlier occurrence, that fragment has a ready translation, and the user presses the replace shortcut
+- **THEN** only that earlier captured occurrence changes; later identical text is left unchanged
+
+#### Scenario: Long source remains display-only
+- **WHEN** the caret-resolved source exceeds the request length limit, a truncated fragment is translated, and the user presses the replace shortcut
+- **THEN** Copy Translation may copy that result, but the focused field is left unchanged
 
 #### Scenario: Replace shortcut does nothing without a ready translation
 - **WHEN** Replace Original is on and the user presses the replace shortcut but there is no current translation for the focused fragment
@@ -140,11 +148,15 @@ When Replace Original is on, a successful translation MUST NOT modify the focuse
 
 ### Requirement: Replace Original does not overwrite stale or unwritable fields
 
-The system SHALL write the translation only if the focused field still contains the same source fragment that was translated. If the field cannot be written, or that source is no longer present, the original text SHALL remain and the overlay translation SHALL still be shown.
+The system SHALL write the translation only if the currently focused field still contains the captured source at the exact UTF-16 range recorded when that translation was requested. If the field cannot be written, the range is out of bounds, or the text at that range is no longer the captured source, the original text SHALL remain and the overlay translation SHALL still be shown. The system MUST NOT fall back to another occurrence of the same string.
 
 #### Scenario: User kept typing after translation
-- **WHEN** a fragment has been translated and the user changes that fragment before pressing the replace shortcut
+- **WHEN** a fragment has been translated and the user changes the text at the captured range before pressing the replace shortcut
 - **THEN** pressing the shortcut does not write the stale translation into the field
+
+#### Scenario: Captured range has changed
+- **WHEN** the text at the captured source range no longer equals the source that was translated
+- **THEN** pressing the replace shortcut leaves the field unchanged
 
 #### Scenario: Field cannot be written
 - **WHEN** the user presses the replace shortcut and the focused field rejects the write
@@ -169,3 +181,31 @@ When Copy Translation is on, the system SHALL copy the current English translati
 #### Scenario: Copy shortcut ignored while translation is paused
 - **WHEN** live translation is paused and the user presses the copy shortcut
 - **THEN** the clipboard is left unchanged
+
+### Requirement: Translation sessions reject obsolete language-pair work
+
+When the selected source or target language changes, local translation work waiting for the previous language pair MUST be cancelled or fail promptly with an unavailable or cancelled error. A session attached for a newly selected pair MUST resume only requests for that same pair. Obsolete requests MUST NOT receive a translation from the new pair or remain blocked until the local-session readiness timeout.
+
+#### Scenario: Direction changes while local session is unavailable
+- **WHEN** a request for one language pair is waiting for a local translation session and the user changes direction
+- **THEN** the old request finishes without a result promptly and the new direction can establish its own session
+
+#### Scenario: New session does not satisfy old request
+- **WHEN** a local session attaches after the user changed to another language pair
+- **THEN** only requests for the newly configured pair use that session
+
+### Requirement: Overlay content updates renew the hide duration
+
+When an accepted translation updates an existing overlay, the overlay SHALL remain visible for a full configured hide duration starting from that update. When never-hide is on, the overlay SHALL still not auto-hide.
+
+#### Scenario: Corrected translation renews hide duration
+- **WHEN** a visible overlay is updated with a corrected translation before its current hide timer expires
+- **THEN** it remains visible for the configured duration after the corrected text appears
+
+### Requirement: Overlay appears on the active input display
+
+The overlay SHALL be presented on the display containing the active focused input when that location is available. It MAY use the main display only when the host application exposes no usable location. Settings preview overlays MAY continue to appear on the main display.
+
+#### Scenario: Input on a secondary display
+- **WHEN** the active editable input is on a secondary display and a translation is accepted
+- **THEN** the overlay appears on that secondary display

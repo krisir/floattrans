@@ -104,6 +104,7 @@ enum L10n {
     }
     static func addModel(_ lang: UILanguage) -> String { lang == .chinese ? "添加模型" : "Add Model" }
     static func removeModel(_ lang: UILanguage) -> String { lang == .chinese ? "删除模型" : "Remove Model" }
+    static func saveModel(_ lang: UILanguage) -> String { lang == .chinese ? "保存" : "Save" }
     static func modelName(_ lang: UILanguage) -> String { lang == .chinese ? "名称" : "Name" }
     static func provider(_ lang: UILanguage) -> String { lang == .chinese ? "服务商" : "Provider" }
     static func apiProtocol(_ lang: UILanguage) -> String { lang == .chinese ? "API 协议" : "API Protocol" }

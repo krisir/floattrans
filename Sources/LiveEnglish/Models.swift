@@ -81,8 +81,15 @@ public struct SentenceExtractor: Sendable {
 
     public init() {}
     public func extract(from snapshot: TextSnapshot, maxLength: Int = 300) -> String {
+        extractSource(from: snapshot, maxLength: maxLength)?.text ?? ""
+    }
+
+    /// Captures the sentence at the caret together with its identity in the
+    /// field. `text` may be shortened for translation/display, but `range`
+    /// always describes the complete, unshortened source in the snapshot.
+    public func extractSource(from snapshot: TextSnapshot, maxLength: Int = 300) -> ExtractedSource? {
         let text = snapshot.text
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return "" }
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
         var caret = Self.caretIndex(in: text, selectedRange: snapshot.selectedRange)
         if caret > text.startIndex {
             let previous = text.index(before: caret)
@@ -90,12 +97,27 @@ public struct SentenceExtractor: Sendable {
                 caret = previous
             }
         }
-        var result = Self.fragment(in: text, caret: caret)
-        if !Self.isUsable(result) {
-            result = Self.previousUsableSentence(in: text, before: caret) ?? result
+        var range = Self.fragmentRange(in: text, caret: caret)
+        if !Self.isUsable(String(text[range])) {
+            range = Self.previousUsableSentenceRange(in: text, before: caret) ?? range
         }
-        if result.count > maxLength { result = String(result.suffix(maxLength)) }
-        return result
+        range = Self.trimmedRange(in: text, range: range)
+        let captured = String(text[range])
+        guard Self.isUsable(captured) else { return nil }
+        let wasTruncated = captured.count > maxLength
+        let display = wasTruncated ? String(captured.suffix(maxLength)) : captured
+        let nsRange = NSRange(range, in: text)
+        let terminatorRange: NSRange?
+        if let last = captured.last, Self.sentencePunctuation.contains(last) {
+            let end = range.upperBound
+            let start = text.index(before: end)
+            terminatorRange = NSRange(start..<end, in: text)
+        } else {
+            terminatorRange = nil
+        }
+        return ExtractedSource(
+            text: display, capturedText: captured, range: nsRange,
+            terminatorRange: terminatorRange, wasTruncated: wasTruncated)
     }
 
     public func isComplete(_ snapshot: TextSnapshot) -> Bool {
@@ -112,7 +134,7 @@ public struct SentenceExtractor: Sendable {
         return String.Index(utf16Offset: offset, in: text)
     }
 
-    private static func fragment(in text: String, caret: String.Index) -> String {
+    private static func fragmentRange(in text: String, caret: String.Index) -> Range<String.Index> {
         var start = caret
         while start > text.startIndex {
             let previous = text.index(before: start)
@@ -126,10 +148,10 @@ public struct SentenceExtractor: Sendable {
         if end < text.endIndex, sentencePunctuation.contains(text[end]) {
             end = text.index(after: end)
         }
-        return String(text[start..<end]).trimmingCharacters(in: .whitespacesAndNewlines)
+        return start..<end
     }
 
-    private static func previousUsableSentence(in text: String, before caret: String.Index) -> String? {
+    private static func previousUsableSentenceRange(in text: String, before caret: String.Index) -> Range<String.Index>? {
         var probe = caret
         while probe > text.startIndex {
             let previous = text.index(before: probe)
@@ -138,8 +160,8 @@ public struct SentenceExtractor: Sendable {
                 if inPrevious > text.startIndex {
                     inPrevious = text.index(before: inPrevious)
                 }
-                let candidate = fragment(in: text, caret: inPrevious)
-                return isUsable(candidate) ? candidate : nil
+                let candidate = trimmedRange(in: text, range: fragmentRange(in: text, caret: inPrevious))
+                return isUsable(String(text[candidate])) ? candidate : nil
             }
             probe = previous
         }
@@ -149,6 +171,29 @@ public struct SentenceExtractor: Sendable {
     private static func isUsable(_ sentence: String) -> Bool {
         !sentence.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
+
+    private static func trimmedRange(in text: String, range: Range<String.Index>) -> Range<String.Index> {
+        var start = range.lowerBound
+        var end = range.upperBound
+        while start < end, text[start].isWhitespace { start = text.index(after: start) }
+        while end > start {
+            let previous = text.index(before: end)
+            guard text[previous].isWhitespace else { break }
+            end = previous
+        }
+        return start..<end
+    }
+}
+
+/// A caret-resolved slice of an accessibility field. The range and captured
+/// text are deliberately kept together so replacement never guesses among
+/// duplicate sentence strings.
+public struct ExtractedSource: Equatable, Sendable {
+    public let text: String
+    public let capturedText: String
+    public let range: NSRange
+    public let terminatorRange: NSRange?
+    public let wasTruncated: Bool
 }
 
 public struct FieldReplacement: Equatable, Sendable {
@@ -206,6 +251,25 @@ public struct FieldReplacement: Equatable, Sendable {
 }
 
 enum FocusedFieldReplacer {
+    static func replace(
+        currentText: String?, capturedSource: ExtractedSource, translation: String,
+        write: (String, Int) -> Bool
+    ) -> Bool {
+        guard !capturedSource.wasTruncated, let currentText else { return false }
+        let field = currentText as NSString
+        let range = capturedSource.range
+        guard range.location != NSNotFound,
+            range.location >= 0,
+            range.length >= 0,
+            range.location <= field.length,
+            range.length <= field.length - range.location,
+            field.substring(with: range) == capturedSource.capturedText
+        else { return false }
+        let prefix = field.substring(to: range.location)
+        let suffix = field.substring(from: range.location + range.length)
+        return write(prefix + translation + suffix, (prefix as NSString).length + (translation as NSString).length)
+    }
+
     static func replace(
         currentText: String?,
         sourceWithTerminator: String,
@@ -367,6 +431,53 @@ enum TranslationSessionError: Error {
     case unavailable
 }
 
+/// Continuations tagged with the generation that created them. Used by the
+/// local translation session and by tests with sendable values.
+@MainActor
+final class GenerationTaggedWaiters<Value: Sendable> {
+    private(set) var generation = 0
+    private var waiters: [(generation: Int, continuation: CheckedContinuation<Value, Error>)] = []
+
+    var pendingCount: Int { waiters.count }
+
+    func invalidate() {
+        generation += 1
+        failPending()
+    }
+
+    func wait() async throws -> Value {
+        let captured = generation
+        return try await withCheckedThrowingContinuation { continuation in
+            waiters.append((captured, continuation))
+        }
+    }
+
+    func resumeMatching(_ value: Value) {
+        let current = generation
+        let pending = waiters
+        waiters.removeAll()
+        for waiter in pending {
+            if waiter.generation == current {
+                waiter.continuation.resume(returning: value)
+            } else {
+                waiter.continuation.resume(throwing: TranslationSessionError.unavailable)
+            }
+        }
+    }
+
+    func failMatching(_ generation: Int) {
+        let matching = waiters.filter { $0.generation == generation }
+        waiters.removeAll { $0.generation == generation }
+        matching.forEach { $0.continuation.resume(throwing: TranslationSessionError.unavailable) }
+    }
+
+    private func failPending() {
+        let pending = waiters
+        waiters.removeAll()
+        pending.forEach { $0.continuation.resume(throwing: TranslationSessionError.unavailable) }
+    }
+}
+
 @MainActor
 final class TranslationSessionHolder {
     private var session: TranslationSession?
@@ -374,7 +485,8 @@ final class TranslationSessionHolder {
     private var sessionTarget: Language?
     private var requestedSource: Language = .chinese
     private var requestedTarget: Language = .english
-    private var waiters: [CheckedContinuation<TranslationSession, Error>] = []
+    private var configurationGeneration = 0
+    private var waiters: [(generation: Int, continuation: CheckedContinuation<TranslationSession, Error>)] = []
 
     func attach(_ session: TranslationSession, source: Language, target: Language) {
         // A previous SwiftUI task can complete after its configuration has
@@ -384,9 +496,7 @@ final class TranslationSessionHolder {
         self.session = session
         sessionSource = source
         sessionTarget = target
-        let pending = waiters
-        waiters.removeAll()
-        pending.forEach { $0.resume(returning: session) }
+        resumeWaiters(with: session)
     }
 
     func configure(source: Language, target: Language) {
@@ -399,6 +509,8 @@ final class TranslationSessionHolder {
         session = nil
         sessionSource = nil
         sessionTarget = nil
+        configurationGeneration += 1
+        failWaiters()
     }
 
     func translate(_ text: String, from source: Language, to target: Language) async throws -> String {
@@ -410,20 +522,40 @@ final class TranslationSessionHolder {
             throw TranslationSessionError.unavailable
         }
         if let session, sessionSource == source, sessionTarget == target { return session }
+        let generation = configurationGeneration
         return try await withCheckedThrowingContinuation { continuation in
-            waiters.append(continuation)
+            waiters.append((generation, continuation))
             if waiters.count == 1 {
-                Task { await self.failWaitersIfStillEmpty() }
+                Task { await self.failWaitersIfStillEmpty(generation: generation) }
             }
         }
     }
 
-    private func failWaitersIfStillEmpty() async {
-        try? await Task.sleep(for: .seconds(8))
-        guard session == nil, !waiters.isEmpty else { return }
+    private func resumeWaiters(with session: TranslationSession) {
+        let current = configurationGeneration
         let pending = waiters
         waiters.removeAll()
-        pending.forEach { $0.resume(throwing: TranslationSessionError.unavailable) }
+        for waiter in pending {
+            if waiter.generation == current {
+                waiter.continuation.resume(returning: session)
+            } else {
+                waiter.continuation.resume(throwing: TranslationSessionError.unavailable)
+            }
+        }
+    }
+
+    private func failWaiters() {
+        let pending = waiters
+        waiters.removeAll()
+        pending.forEach { $0.continuation.resume(throwing: TranslationSessionError.unavailable) }
+    }
+
+    private func failWaitersIfStillEmpty(generation: Int) async {
+        try? await Task.sleep(for: .seconds(8))
+        guard session == nil else { return }
+        let matching = waiters.filter { $0.generation == generation }
+        waiters.removeAll { $0.generation == generation }
+        matching.forEach { $0.continuation.resume(throwing: TranslationSessionError.unavailable) }
     }
 }
 

@@ -16,7 +16,7 @@ final class InputCoordinatorTimingTests: XCTestCase {
         input.delayMilliseconds = 20
         let session = InputSessionID(pid: 1)
         var received: String?
-        input.onSentence = { text, _, _, _, _, _, _ in received = text }
+        input.onSentence = { source, _, _, _, _, _, _ in received = source.text }
         input.handle(snapshot("我今天会晚一点"), session: session, screen: nil)
         XCTAssertNil(received)
         try? await Task.sleep(for: .milliseconds(80))
@@ -29,7 +29,7 @@ final class InputCoordinatorTimingTests: XCTestCase {
         input.delayMilliseconds = 20
         let session = InputSessionID(pid: 1)
         var received: String?
-        input.onSentence = { text, _, _, _, _, _, _ in received = text }
+        input.onSentence = { source, _, _, _, _, _, _ in received = source.text }
         input.handle(snapshot("我今天会晚一点"), session: session, screen: nil)
         XCTAssertNil(received)
         try? await Task.sleep(for: .milliseconds(80))
@@ -42,7 +42,7 @@ final class InputCoordinatorTimingTests: XCTestCase {
         input.delayMilliseconds = 200
         let session = InputSessionID(pid: 1)
         var received: String?
-        input.onSentence = { text, _, _, _, _, _, _ in received = text }
+        input.onSentence = { source, _, _, _, _, _, _ in received = source.text }
         input.handle(snapshot("我今天会晚一点。"), session: session, screen: nil)
         XCTAssertEqual(received, "我今天会晚一点。")
     }
@@ -53,7 +53,7 @@ final class InputCoordinatorTimingTests: XCTestCase {
         input.delayMilliseconds = 20
         let session = InputSessionID(pid: 1)
         var received: String?
-        input.onSentence = { text, _, _, _, _, _, _ in received = text }
+        input.onSentence = { source, _, _, _, _, _, _ in received = source.text }
         input.handle(snapshot("我今天会晚一点。"), session: session, screen: nil)
         try? await Task.sleep(for: .milliseconds(80))
         XCTAssertNil(received)
@@ -72,7 +72,7 @@ final class InputCoordinatorTimingTests: XCTestCase {
         input.timing = .shortcut
         let session = InputSessionID(pid: 1)
         var received: String?
-        input.onSentence = { text, _, _, _, _, _, _ in received = text }
+        input.onSentence = { source, _, _, _, _, _, _ in received = source.text }
         input.translateNow(live, session: session, screen: nil)
         XCTAssertNil(received)
         input.translateNow(recovered, session: session, screen: nil)
@@ -84,7 +84,7 @@ final class InputCoordinatorTimingTests: XCTestCase {
         input.timing = .completeSentence
         let session = InputSessionID(pid: 1)
         var received: [String] = []
-        input.onSentence = { text, _, _, _, _, _, _ in received.append(text) }
+        input.onSentence = { source, _, _, _, _, _, _ in received.append(source.text) }
 
         input.handle(snapshot("我今天会晚一点。"), session: session, screen: nil)
         input.handle(snapshot("我今天会晚一點。"), session: session, screen: nil)
@@ -121,7 +121,7 @@ final class InputCoordinatorTimingTests: XCTestCase {
         let session = InputSessionID(pid: 1)
         var received: String?
         var emptyNotifications = 0
-        input.onSentence = { text, _, _, _, _, _, _ in received = text }
+        input.onSentence = { source, _, _, _, _, _, _ in received = source.text }
         input.onEmpty = { emptyNotifications += 1 }
 
         input.handle(snapshot("你"), session: session, screen: nil)

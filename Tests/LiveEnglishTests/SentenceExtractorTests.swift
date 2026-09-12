@@ -152,6 +152,72 @@ final class SentenceExtractorTests: XCTestCase {
                 currentText: field, sourceWithTerminator: "我今天会晚一点。", translation: "Late."
             ) { _, _ in false })
     }
+
+    func testExtractSourceKeepsCaretOccurrenceWhenTextRepeats() {
+        let sentence = "你好世界。"
+        let text = sentence + sentence
+        let extractor = SentenceExtractor()
+        let length = (sentence as NSString).length
+        let first = extractor.extractSource(
+            from: TextSnapshot(
+                pid: 1, bundleIdentifier: nil, text: text, selectedRange: NSRange(location: 2, length: 0)))
+        let second = extractor.extractSource(
+            from: TextSnapshot(
+                pid: 1, bundleIdentifier: nil, text: text, selectedRange: NSRange(location: length + 2, length: 0)))
+        XCTAssertEqual(first?.capturedText, sentence)
+        XCTAssertEqual(second?.capturedText, sentence)
+        XCTAssertEqual(first?.range.location, 0)
+        XCTAssertEqual(second?.range.location, length)
+        XCTAssertNotEqual(first?.range.location, second?.range.location)
+    }
+
+    func testReplaceUsesCapturedRangeNotLastOccurrence() {
+        let sentence = "你好世界。"
+        let field = sentence + sentence
+        let source = ExtractedSource(
+            text: sentence, capturedText: sentence,
+            range: NSRange(location: 0, length: (sentence as NSString).length),
+            terminatorRange: nil, wasTruncated: false)
+        var written: String?
+        XCTAssertTrue(
+            FocusedFieldReplacer.replace(currentText: field, capturedSource: source, translation: "Hi.") { text, _ in
+                written = text
+                return true
+            })
+        XCTAssertEqual(written, "Hi." + sentence)
+    }
+
+    func testReplaceFailsWhenCapturedRangeContentChanged() {
+        let source = ExtractedSource(
+            text: "你好世界。", capturedText: "你好世界。",
+            range: NSRange(location: 0, length: ("你好世界。" as NSString).length),
+            terminatorRange: nil, wasTruncated: false)
+        XCTAssertFalse(
+            FocusedFieldReplacer.replace(
+                currentText: "别的内容。后面还是你好世界。", capturedSource: source, translation: "Hi."
+            ) { _, _ in
+                XCTFail("write should not run when the captured range no longer matches")
+                return true
+            })
+    }
+
+    func testTruncatedSourceIsDisplayOnlyAndDoesNotReplace() {
+        let long = String(repeating: "你", count: 301) + "。"
+        let extracted = SentenceExtractor().extractSource(
+            from: TextSnapshot(
+                pid: 1, bundleIdentifier: nil, text: long,
+                selectedRange: NSRange(location: (long as NSString).length, length: 0)))
+        XCTAssertEqual(extracted?.wasTruncated, true)
+        XCTAssertEqual(extracted?.text.count, 300)
+        XCTAssertEqual(extracted?.capturedText, long)
+        XCTAssertFalse(
+            FocusedFieldReplacer.replace(
+                currentText: long, capturedSource: extracted!, translation: "Too long."
+            ) { _, _ in
+                XCTFail("truncated sources must not rewrite the field")
+                return true
+            })
+    }
 }
 
 final class TranslationClipboardTests: XCTestCase {

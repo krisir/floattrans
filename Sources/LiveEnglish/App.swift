@@ -135,9 +135,9 @@ struct MenuBarMenu: View {
         input.onInputChanged = { [weak self] session, revision in
             self?.invalidateTranslationForInputChange(session: session, revision: revision)
         }
-        input.onSentence = { [weak self] text, sentenceKey, session, screen, snapshot, event, revision in
+        input.onSentence = { [weak self] source, sentenceKey, session, screen, snapshot, event, revision in
             self?.translate(
-                text, sentenceKey: sentenceKey, session: session, screen: screen, snapshot: snapshot, event: event,
+                source, sentenceKey: sentenceKey, session: session, screen: screen, snapshot: snapshot, event: event,
                 revision: revision)
         }
         input.onEmpty = { [weak self] in
@@ -306,7 +306,7 @@ struct MenuBarMenu: View {
         AppPresence.reveal(window)
     }
     private func translate(
-        _ text: String,
+        _ source: ExtractedSource,
         sentenceKey: String,
         session: InputSessionID,
         screen: NSScreen?,
@@ -320,14 +320,11 @@ struct MenuBarMenu: View {
         currentInputRevision = revision
         let previous = pendingAction
         let sameSentence = previous?.sentenceKey == sentenceKey && previous?.session == session
-        var sourceWithTerminator: String?
-        if settings.replaceOriginal {
-            sourceWithTerminator = FieldReplacement.evaluate(fieldText: snapshot.text, source: text)?
-                .sourceWithTerminator
-        }
+        let text = source.text
+        let replacementSource = settings.replaceOriginal && !source.wasTruncated ? source : nil
         pendingAction = PendingTranslationAction(
             text: nil,
-            sourceWithTerminator: sourceWithTerminator,
+            replacementSource: replacementSource,
             session: session,
             sentenceKey: sentenceKey,
             applyReplaceWhenReady: sameSentence && previous?.applyReplaceWhenReady == true,
@@ -383,7 +380,7 @@ struct MenuBarMenu: View {
             pendingAction?.text = result
         } else {
             pendingAction = PendingTranslationAction(
-                text: result, sourceWithTerminator: nil, session: session, sentenceKey: sentenceKey)
+                text: result, replacementSource: nil, session: session, sentenceKey: sentenceKey)
         }
         history.record(
             sourceText: sourceText,
@@ -473,7 +470,7 @@ struct MenuBarMenu: View {
 
     private func handleReplaceHotKey() {
         guard enabled, settings.replaceOriginal else { return }
-        if pendingAction?.text != nil, pendingAction?.sourceWithTerminator != nil {
+        if pendingAction?.text != nil, pendingAction?.replacementSource != nil {
             applyPendingReplace()
         } else if pendingAction != nil {
             pendingAction?.applyReplaceWhenReady = true
@@ -492,10 +489,10 @@ struct MenuBarMenu: View {
     private func applyPendingReplace() {
         guard enabled, settings.replaceOriginal else { return }
         guard var pending = pendingAction, let translation = pending.text,
-            let source = pending.sourceWithTerminator
+            let source = pending.replacementSource
         else { return }
-        if monitor.replace(sourceWithTerminator: source, translation: translation) {
-            pending.sourceWithTerminator = nil
+        if monitor.replace(capturedSource: source, translation: translation) {
+            pending.replacementSource = nil
             pending.applyReplaceWhenReady = false
             pendingAction = pending
         }
@@ -517,7 +514,7 @@ struct MenuBarMenu: View {
 
 private struct PendingTranslationAction {
     var text: String?
-    var sourceWithTerminator: String?
+    var replacementSource: ExtractedSource?
     var session: InputSessionID
     var sentenceKey: String
     var applyReplaceWhenReady = false

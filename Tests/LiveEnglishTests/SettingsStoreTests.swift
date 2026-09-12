@@ -34,6 +34,8 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(L10n.replaceOriginal(.chinese), "替换原文")
         XCTAssertEqual(L10n.replaceOriginal(.english), "Replace Original")
         XCTAssertEqual(L10n.copyTranslation(.chinese), "复制译文")
+        XCTAssertEqual(L10n.saveModel(.chinese), "保存")
+        XCTAssertEqual(L10n.saveModel(.english), "Save")
         XCTAssertEqual(L10n.copyTranslation(.english), "Copy Translation")
         XCTAssertEqual(L10n.replaceShortcut(.chinese), "替换快捷键")
         XCTAssertEqual(L10n.copyShortcut(.english), "Copy Shortcut")
